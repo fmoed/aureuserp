@@ -21,6 +21,7 @@ return [
         'setting'       => 'Paramètres',
         'help'          => 'Aide',
         'point-of-sale' => 'Point de vente',
+        'attendance'    => 'Présences',
         'barcode'       => 'Code-barres',
     ],
 

@@ -21,6 +21,7 @@ return [
         'setting'       => 'الإعدادات',
         'help'          => 'المساعدة',
         'point-of-sale' => 'نقطة البيع',
+        'attendance'    => 'الحضور',
         'barcode'       => 'الباركود',
     ],
 

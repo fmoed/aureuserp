@@ -21,6 +21,7 @@ return [
         'setting'       => 'Settings',
         'help'          => 'Help',
         'point-of-sale' => 'Point of Sale',
+        'attendance'    => 'Attendance',
         'barcode'       => 'Barcode',
     ],
 

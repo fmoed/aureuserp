@@ -21,6 +21,7 @@ return [
         'setting'       => 'Configurações',
         'help'          => 'Ajuda',
         'point-of-sale' => 'Ponto de Venda',
+        'attendance'    => 'Presenças',
         'barcode'       => 'Código de barras',
     ],
 
