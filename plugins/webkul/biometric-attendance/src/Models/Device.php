@@ -21,14 +21,16 @@ class Device extends Model
         'company_id',
         'creator_id',
         'last_sync_at',
+        'last_sync_uid',
         'last_error',
     ];
 
     protected $casts = [
-        'port'         => 'integer',
-        'comm_key'     => 'integer',
-        'is_active'    => 'boolean',
-        'last_sync_at' => 'datetime',
+        'port'          => 'integer',
+        'comm_key'      => 'integer',
+        'is_active'     => 'boolean',
+        'last_sync_at'  => 'datetime',
+        'last_sync_uid' => 'integer',
     ];
 
     public function creator(): BelongsTo
