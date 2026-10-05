@@ -14,11 +14,11 @@ class DeviceSyncService
     /**
      * Download one device's log and store new raw punches.
      *
-     * The device dumps its whole log over the wire on every call — a
-     * ZKTeco protocol limitation, not something the watermark can avoid.
-     * Cheap re-syncs come from the stored last_sync_uid watermark instead:
-     * records at or below it are skipped before any database write, and
-     * firstOrCreate remains only as a safety net for races and reused uids.
+     * The device dumps its whole log on every call (ZKTeco protocol). The
+     * last_sync_uid watermark only skips work when it is still trustworthy;
+     * after a log clear the full log is rescanned. Punch identity is the
+     * natural key (device, user, wall-clock time), so rescans never
+     * duplicate rows.
      *
      * @return array{stored: int, skipped: int, backfilled: int, fetched: int}
      *
@@ -28,23 +28,20 @@ class DeviceSyncService
     {
         $records = $this->client->getAttendanceLogs($device);
 
-        $watermark = $device->last_sync_uid;
+        $watermark = $this->trustedWatermark($device, $records);
         $maxSeen = $watermark;
 
         $stored = 0;
         $skipped = 0;
 
-        $employeeIds = Employee::query()
-            ->whereNotNull('barcode')
-            ->where('barcode', '!=', '')
-            ->pluck('id', 'barcode');
+        $employeeIds = $this->employeeIdsByUserId();
 
         foreach ($records as $record) {
             $uid = (int) $record->uid;
 
             $maxSeen = $maxSeen === null ? $uid : max($maxSeen, $uid);
 
-            if ($watermark !== null && $uid <= $watermark) {
+            if (($watermark !== null && $uid <= $watermark) || $record->recordTime === '') {
                 $skipped++;
 
                 continue;
@@ -53,12 +50,12 @@ class DeviceSyncService
             $punch = Punch::firstOrCreate(
                 [
                     'device_id'  => $device->id,
-                    'device_uid' => $uid,
+                    'zk_user_id' => $record->userId,
+                    'punch_time' => $record->recordTime,
                 ],
                 [
-                    'zk_user_id'  => $record->userId,
-                    'employee_id' => $employeeIds->get($record->userId),
-                    'punch_time'  => $record->recordTime !== '' ? $record->recordTime : null,
+                    'device_uid'  => $uid,
+                    'employee_id' => $employeeIds[$record->userId] ?? null,
                     'raw_state'   => (int) $record->state,
                     'raw_type'    => (int) $record->type,
                 ]
@@ -73,10 +70,10 @@ class DeviceSyncService
 
         $backfilled = 0;
 
-        foreach ($employeeIds as $barcode => $employeeId) {
+        foreach ($employeeIds as $userId => $employeeId) {
             $backfilled += Punch::where('device_id', $device->id)
                 ->whereNull('employee_id')
-                ->where('zk_user_id', $barcode)
+                ->where('zk_user_id', (string) $userId)
                 ->update(['employee_id' => $employeeId]);
         }
 
@@ -92,5 +89,72 @@ class DeviceSyncService
             'backfilled' => $backfilled,
             'fetched'    => count($records),
         ];
+    }
+
+    /**
+     * The stored watermark is trusted only when the punch it points to is
+     * still on the device unchanged; otherwise the log was cleared or
+     * replaced and everything is rescanned.
+     *
+     * @param  PunchRecord[]  $records
+     */
+    protected function trustedWatermark(Device $device, array $records): ?int
+    {
+        $watermark = $device->last_sync_uid;
+
+        if ($watermark === null) {
+            return null;
+        }
+
+        $anchor = Punch::query()
+            ->where('device_id', $device->id)
+            ->where('device_uid', $watermark)
+            ->latest('id')
+            ->first();
+
+        if (! $anchor) {
+            return null;
+        }
+
+        foreach ($records as $record) {
+            if ((int) $record->uid !== $watermark) {
+                continue;
+            }
+
+            return $record->userId === $anchor->zk_user_id && $record->recordTime === $anchor->getRawOriginal('punch_time')
+                ? $watermark
+                : null;
+        }
+
+        return null;
+    }
+
+    /**
+     * Exact barcode => employee id. On duplicates the oldest employee
+     * (lowest id) wins silently for HR cleanup.
+     *
+     * @return array<string, int>
+     */
+    protected function employeeIdsByUserId(): array
+    {
+        $map = [];
+
+        $barcodes = Employee::query()
+            ->whereNotNull('barcode')
+            ->where('barcode', '!=', '')
+            ->orderBy('id')
+            ->pluck('barcode', 'id');
+
+        foreach ($barcodes as $employeeId => $barcode) {
+            $key = (string) $barcode;
+
+            if (array_key_exists($key, $map)) {
+                continue;
+            }
+
+            $map[$key] = $employeeId;
+        }
+
+        return $map;
     }
 }

@@ -6,7 +6,6 @@ use Filament\Panel;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Gate;
-use Webkul\Attendance\Console\ProcessEventsCommand;
 use Webkul\Attendance\Writers\WriterRegistry;
 use Webkul\BiometricAttendance\Console\PushEventsCommand;
 use Webkul\BiometricAttendance\Console\ReadAttendanceCommand;
@@ -16,6 +15,8 @@ use Webkul\BiometricAttendance\Console\TestConnectionCommand;
 use Webkul\BiometricAttendance\Contracts\ZktecoClientInterface;
 use Webkul\BiometricAttendance\Models\Device;
 use Webkul\BiometricAttendance\Policies\DevicePolicy;
+use Webkul\BiometricAttendance\Scheduling\SyncSchedule;
+use Webkul\BiometricAttendance\Services\AttendanceBridge;
 use Webkul\BiometricAttendance\Services\PhpZktecoClient;
 use Webkul\PluginManager\Console\Commands\InstallCommand;
 use Webkul\PluginManager\Console\Commands\UninstallCommand;
@@ -34,6 +35,7 @@ class BiometricAttendanceServiceProvider extends PackageServiceProvider
                 '2026_09_20_000001_create_biometric_devices_table',
                 '2026_09_23_000002_create_biometric_punches_table',
                 '2026_10_04_000003_biometric_sync_watermarks',
+                '2026_10_05_000004_use_natural_key_on_biometric_punches_table',
             ])
             ->hasDependencies([
                 'employees',
@@ -66,23 +68,25 @@ class BiometricAttendanceServiceProvider extends PackageServiceProvider
         }
 
         /**
-         * Chain schedule: sync devices → push punches → pair rows, every 15 minutes.
-         * Ops note: production cron needs `* * * * * php artisan schedule:run`
-         * (single entry; the scheduler fans out). The attendance pairing step
-         * is skipped at runtime when that plugin is absent, so boot and the
-         * whole schedule stay working without it.
+         * Chain schedule: sync devices → push punches → pair rows. Cadence comes
+         * from SyncSchedule (config `biometric-attendance.sync_cadence`, hourly
+         * default; the future settings page binds to its options). Ops note:
+         * production cron needs `* * * * * php artisan schedule:run` (single
+         * entry; the scheduler fans out). The attendance pairing step is skipped
+         * at runtime when that plugin is absent, so boot and the whole schedule
+         * stay working without it.
          */
         $this->app->booted(function (): void {
             $schedule = $this->app->make(Schedule::class);
 
-            $schedule->command('biometric:sync-all')->everyFifteenMinutes();
-            $schedule->command('biometric:push-events')->everyFifteenMinutes();
+            SyncSchedule::apply($schedule->command('biometric:sync-all'));
+            SyncSchedule::apply($schedule->command('biometric:push-events'));
 
-            $schedule->call(function (): void {
-                if (class_exists(ProcessEventsCommand::class)) {
+            SyncSchedule::apply($schedule->call(function (): void {
+                if (AttendanceBridge::isAvailable()) {
                     Artisan::call('attendance:process-events');
                 }
-            })->everyFifteenMinutes()->name('attendance:process-events');
+            })->name('attendance:process-events'));
         });
     }
 

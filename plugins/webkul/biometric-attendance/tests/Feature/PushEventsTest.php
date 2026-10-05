@@ -11,6 +11,7 @@ use Webkul\Attendance\Writers\WriterRegistry;
 use Webkul\BiometricAttendance\Console\PushEventsCommand;
 use Webkul\BiometricAttendance\Models\Device;
 use Webkul\BiometricAttendance\Models\Punch;
+use Webkul\BiometricAttendance\Services\AttendanceBridge;
 use Webkul\Employee\Models\Employee;
 
 beforeEach(function () {
@@ -96,7 +97,7 @@ it('stores one event for double pushes of the same punch', function () {
     expect(AttendanceEvent::where('source', "biometric-attendance:{$device->id}")->where('source_ref', "punch:{$punch->id}")->count())->toBe(1);
 });
 
-it('maps raw states to attendance directions', function () {
+it('pushes an unknown direction until the device semantics are verified', function () {
     ensureAttendanceAvailable($this);
 
     $employee = Employee::factory()->create(['barcode' => '779', 'time_zone' => 'UTC']);
@@ -123,7 +124,7 @@ it('maps raw states to attendance directions', function () {
 
     $directions = AttendanceEvent::where('source', "biometric-attendance:{$device->id}")->orderBy('punched_at')->pluck('direction')->all();
 
-    expect($directions)->toBe([1, -1, 0]);
+    expect($directions)->toBe([0, 0, 0]);
 });
 
 it('converts device wall-clock times to UTC using the device timezone', function () {
@@ -195,4 +196,10 @@ it('pairs an overnight shift pushed from punches into one row anchored to its st
         ->and($rows->first()->work_date->format('Y-m-d'))->toBe('2026-10-01')
         ->and($rows->first()->getRawOriginal('check_in'))->toBe('2026-10-01 22:00:00')
         ->and($rows->first()->getRawOriginal('check_out'))->toBe('2026-10-02 06:00:00');
+});
+
+it('reports the attendance bridge as available once attendance is installed', function () {
+    ensureAttendanceAvailable($this);
+
+    expect(AttendanceBridge::isAvailable())->toBeTrue();
 });

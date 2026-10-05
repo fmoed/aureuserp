@@ -61,6 +61,33 @@ function bindFlakySyncClient(): void
     });
 }
 
+/**
+ * @param  list<array{uid: int, user_id: string, record_time: string}>  $rows
+ */
+function bindClearedLogClient(array $rows): void
+{
+    app()->bind(ZktecoClientInterface::class, fn () => new class($rows) implements ZktecoClientInterface
+    {
+        /**
+         * @param  list<array{uid: int, user_id: string, record_time: string}>  $rows
+         */
+        public function __construct(private array $rows) {}
+
+        public function getDeviceInfo(Device $device): DeviceInfo
+        {
+            return new DeviceInfo(deviceName: 'UA300', serialNumber: 'CLEAR-SN', host: $device->host);
+        }
+
+        public function getAttendanceLogs(Device $device): array
+        {
+            return array_map(
+                fn (array $row): PunchRecord => PunchRecord::fromArray([...$row, 'state' => '1', 'type' => '0', 'device_ip' => $device->host]),
+                $this->rows
+            );
+        }
+    });
+}
+
 function skipUnlessAttendanceIsPresent(object $test): void
 {
     if (! class_exists(EventGateway::class) || ! class_exists(AttendanceEvent::class)) {
@@ -160,4 +187,41 @@ it('syncs the healthy device and still fails when one device is offline', functi
         ->and($healthy->fresh()->last_sync_at)->not->toBeNull()
         ->and($healthy->fresh()->last_error)->toBeNull()
         ->and($offline->fresh()->last_error)->toContain('Cannot reach device');
+});
+
+it('rescans the whole log when the device log was cleared', function () {
+    $device = Device::create(['name' => 'Cleared Device', 'host' => '10.0.0.22', 'timezone' => 'UTC']);
+
+    bindWatermarkSyncClient();
+
+    $this->artisan('biometric:sync', ['device' => $device->id])->assertSuccessful();
+
+    bindClearedLogClient([
+        ['uid' => 1, 'user_id' => '111', 'record_time' => '2026-09-25 08:00:00'],
+        ['uid' => 2, 'user_id' => '102', 'record_time' => '2026-09-25 08:05:00'],
+        ['uid' => 3, 'user_id' => '111', 'record_time' => '2026-09-25 17:00:00'],
+    ]);
+
+    $this->artisan('biometric:sync', ['device' => $device->id])
+        ->expectsOutputToContain('stored: 3, already present: 0')
+        ->assertSuccessful();
+
+    expect(Punch::where('device_id', $device->id)->count())->toBe(5)
+        ->and($device->fresh()->last_sync_uid)->toBe(3);
+});
+
+it('keeps one punch when the same record returns under a new uid', function () {
+    $device = Device::create(['name' => 'Reused Uid Device', 'host' => '10.0.0.23', 'timezone' => 'UTC']);
+
+    bindClearedLogClient([['uid' => 1, 'user_id' => '111', 'record_time' => '2026-09-22 09:30:52']]);
+
+    $this->artisan('biometric:sync', ['device' => $device->id])->assertSuccessful();
+
+    bindClearedLogClient([['uid' => 7, 'user_id' => '111', 'record_time' => '2026-09-22 09:30:52']]);
+
+    $this->artisan('biometric:sync', ['device' => $device->id])
+        ->expectsOutputToContain('stored: 0, already present: 1')
+        ->assertSuccessful();
+
+    expect(Punch::where('device_id', $device->id)->count())->toBe(1);
 });
