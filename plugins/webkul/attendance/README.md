@@ -1,7 +1,9 @@
 # Attendance Plugin
 
-Neutral, source-agnostic daily attendance ledger for AureusERP. One row per
-`(employee_id, work_date, source)` with naive-UTC `check_in` / `check_out`.
+Neutral, source-agnostic attendance ledger for AureusERP. One row per work
+session with naive-UTC `check_in` / `check_out`; `work_date` is the day the
+session starts. Several sessions per employee and day are allowed (indexed,
+not unique); the manual form still allows one manual row per day.
 It owns no devices and no leave logic — it only records that someone
 was present on a calendar day.
 
@@ -63,20 +65,27 @@ normalize device clocks to UTC, then `EventGateway::push($employeeId,
 $punchedAtUtc, $direction, $source, $sourceRef, $sourceLabel = null)` —
 never decide days. Directions: `1` in, `-1` out, `0` unknown; deduped by
 `UNIQUE(source, source_ref)`; unknown slugs throw, nothing else is rejected.
-Pairing owner is `attendance:process-events` (idempotent, V1 single pass):
-an open row of the SAME writer slug takes any punch within
-`Attendance::MAX_SHIFT_HOURS` (16h, TEMP) of its check-in — device ids never
-isolate rows, so in-gate/out-gate pairs onto one row that keeps the opening
-device's source while events keep their own. Otherwise a new row opens
-anchored to the punch's calendar day. A 22:00 → 06:00(+1) shift is one row
-on day 1; a punch 33h later starts a new row. Per-shift windows (the shifts
-phase) replace the TEMP constant; shifts/rosters/overtime stay out of scope.
+Pairing owner is `attendance:process-events` (idempotent, locked against
+concurrent runs). Rows are a projection of events: for each employee and
+writer slug with new events, the rows of the affected window (earliest new
+punch minus `Attendance::MAX_SHIFT_HOURS`, widened to any row touching it)
+are rebuilt from the events and reconciled in place. Sessionization: punches
+sorted by time; a punch under 120 s after the previous accepted punch is a
+double scan and changes nothing; a punch within 16h (TEMP) of the session's
+check-in becomes its check-out (last punch wins); anything later opens a new
+session. Device ids never isolate sessions, so in-gate/out-gate pairs onto
+one row that keeps the opening device's source while events keep their own.
+A 22:00 → 02:00 → 06:00(+1) shift is one row on day 1; late, older punches
+move check-in earlier on the next run. Manual rows are never touched; a
+check-out an HR user typed on an open device row is kept until a real punch
+closes the session. Per-shift windows (the shifts phase) replace the TEMP
+constant; shifts/rosters/overtime stay out of scope.
 
 ## What it is NOT
 
 - No shifts, overtime, late/early penalties, grace periods, or payroll.
-- No multi-session days, no break splitting, no IN/OUT direction logic —
-  today the model is deliberately first-in / last-out per day.
+- No break splitting and no IN/OUT direction logic — a session is
+  deliberately first-in / last-out inside the 16h window.
 - No automatic leave deduction. An unexcused absence stays a visible fact
   until an HR user explicitly acts on it.
 - No approval workflow and no per-shift source precedence yet: a `manual`
