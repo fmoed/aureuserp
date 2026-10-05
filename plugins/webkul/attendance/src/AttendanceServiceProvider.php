@@ -24,6 +24,7 @@ class AttendanceServiceProvider extends PackageServiceProvider
                 '2026_09_24_000001_create_attendance_attendances_table',
                 '2026_09_30_000001_add_source_label_to_attendance_attendances_table',
                 '2026_10_01_000001_create_attendance_events_table',
+                '2026_10_05_000001_allow_multiple_sessions_per_day_on_attendance_attendances_table',
             ])
             ->hasCommands([
                 ProcessEventsCommand::class,

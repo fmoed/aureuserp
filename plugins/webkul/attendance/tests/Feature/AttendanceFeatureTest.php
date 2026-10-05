@@ -4,7 +4,6 @@ require_once __DIR__.'/../../../support/tests/Helpers/TestBootstrapHelper.php';
 require_once __DIR__.'/../../../support/tests/Helpers/FilamentHelper.php';
 
 use Filament\Actions\Exports\Models\Export;
-use Illuminate\Database\QueryException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Gate;
 use Livewire\Livewire;
@@ -65,31 +64,19 @@ it('reports null worked minutes when the day is still open', function () {
     expect($attendance->worked_minutes)->toBeNull();
 });
 
-it('allows one row per employee, work date and source', function () {
+it('allows several rows per employee and work date at the database level', function () {
     $employee = Employee::factory()->create();
 
-    Attendance::create([
-        'employee_id' => $employee->id,
-        'work_date'   => '2026-09-24',
-        'check_in'    => '2026-09-24 08:00:00',
-        'source'      => 'manual',
-    ]);
+    foreach ([['manual', '08:00:00'], ['biometric-attendance', '08:10:00'], ['biometric-attendance', '20:10:00']] as [$source, $time]) {
+        Attendance::create([
+            'employee_id' => $employee->id,
+            'work_date'   => '2026-09-24',
+            'check_in'    => "2026-09-24 {$time}",
+            'source'      => $source,
+        ]);
+    }
 
-    Attendance::create([
-        'employee_id' => $employee->id,
-        'work_date'   => '2026-09-24',
-        'check_in'    => '2026-09-24 08:10:00',
-        'source'      => 'biometric-attendance',
-    ]);
-
-    expect(Attendance::where('employee_id', $employee->id)->count())->toBe(2);
-
-    expect(fn () => Attendance::create([
-        'employee_id' => $employee->id,
-        'work_date'   => '2026-09-24',
-        'check_in'    => '2026-09-24 08:20:00',
-        'source'      => 'manual',
-    ]))->toThrow(QueryException::class);
+    expect(Attendance::where('employee_id', $employee->id)->count())->toBe(3);
 });
 
 it('maps the attendance policy', function () {

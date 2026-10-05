@@ -3,104 +3,80 @@
 namespace Webkul\Attendance\Console;
 
 use Illuminate\Console\Command;
-use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Webkul\Attendance\Models\Attendance;
 use Webkul\Attendance\Models\AttendanceEvent;
+use Webkul\Attendance\Services\EventPairingService;
+use Webkul\Employee\Models\Employee;
+use Webkul\Support\Models\Scopes\CompanyScope;
 
 class ProcessEventsCommand extends Command
 {
+    public const LOCK_NAME = 'attendance:process-events';
+
     protected $signature = 'attendance:process-events';
 
-    protected $description = 'Pair raw attendance events into daily rows (idempotent).';
+    protected $description = 'Rebuild attendance rows from raw events (idempotent, safe to re-run).';
 
-    public function handle(): int
+    public function handle(EventPairingService $pairing): int
     {
-        // V1 single-pass pairing; performance work is deferred.
-        $events = AttendanceEvent::query()
-            ->whereNull('attendance_id')
-            ->orderBy('punched_at')
-            ->orderBy('id')
-            ->with('employee')
-            ->get();
+        $lock = Cache::lock(self::LOCK_NAME, 600);
 
-        $processed = 0;
-        $rowIds = [];
+        if (! $lock->get()) {
+            $this->warn('Another pairing run is in progress. Skipping.');
 
-        foreach ($events->groupBy(fn (AttendanceEvent $event): string => $event->employee_id.'|'.(Attendance::sourceWriter($event->source) ?? $event->source)) as $group) {
-            foreach ($group->sortBy(fn (AttendanceEvent $event): string => $event->getRawOriginal('punched_at').'#'.$event->getKey()) as $event) {
-                $employee = $event->employee;
+            return self::SUCCESS;
+        }
+
+        try {
+            $groups = AttendanceEvent::query()
+                ->withoutGlobalScope(CompanyScope::class)
+                ->whereNull('attendance_id')
+                ->select(['employee_id', 'source'])
+                ->distinct()
+                ->get()
+                ->map(fn (AttendanceEvent $event): array => [
+                    'employee_id' => $event->employee_id,
+                    'writer'      => Attendance::sourceWriter($event->source),
+                ])
+                ->filter(fn (array $group): bool => $group['writer'] !== null)
+                ->unique(fn (array $group): string => $group['employee_id'].'|'.$group['writer']);
+
+            $employees = Employee::query()
+                ->whereKey($groups->pluck('employee_id')->unique()->all())
+                ->get()
+                ->keyBy('id');
+
+            $processed = 0;
+            $rowIds = [];
+
+            foreach ($groups as $group) {
+                $employee = $employees->get($group['employee_id']);
 
                 if (! $employee) {
                     continue;
                 }
 
-                $timezone = $employee->time_zone ?: config('app.timezone');
-                $punchedRaw = $event->getRawOriginal('punched_at');
-                $punchedUtc = Carbon::parse($punchedRaw, 'UTC')->format('Y-m-d H:i:s');
-                $eventDate = Carbon::parse($punchedRaw, 'UTC')->setTimezone($timezone)->toDateString();
-                $writer = Attendance::sourceWriter($event->source);
-                $punch = Carbon::parse($punchedRaw, 'UTC');
+                $result = $pairing->rebuild($employee, $group['writer']);
 
-                $row = Attendance::query()
-                    ->where('employee_id', $event->employee_id)
-                    ->whereNull('check_out')
-                    ->orderBy('work_date', 'desc')
-                    ->orderBy('check_in', 'desc')
-                    ->orderBy('id', 'desc')
-                    ->get()
-                    ->first(function (Attendance $candidate) use ($writer, $punch): bool {
-                        if (Attendance::sourceWriter($candidate->source) !== $writer) {
-                            return false;
-                        }
+                $processed += $result['events'];
 
-                        return Attendance::isValidCheckout(Carbon::parse($candidate->getRawOriginal('check_in'), 'UTC'), $punch);
-                    });
-
-                if ($row) {
-                    $row->check_out = $punchedUtc;
-                    $row->save();
-                } else {
-                    $existing = Attendance::query()
-                        ->where('employee_id', $event->employee_id)
-                        ->where('work_date', $eventDate)
-                        ->where('source', $event->source)
-                        ->first();
-
-                    if ($existing) {
-                        $checkInRaw = $existing->getRawOriginal('check_in');
-
-                        if ($punchedUtc >= $checkInRaw) {
-                            $existing->check_out = $punchedUtc;
-                            $existing->save();
-                        }
-
-                        $row = $existing;
-                    } else {
-                        $row = Attendance::create([
-                            'employee_id'  => $event->employee_id,
-                            'work_date'    => $eventDate,
-                            'check_in'     => $punchedUtc,
-                            'check_out'    => null,
-                            'source'       => $event->source,
-                            'source_label' => $event->source_label,
-                            'company_id'   => $event->company_id ?? $employee->company_id,
-                        ]);
-                    }
+                foreach ($result['rows'] as $rowId) {
+                    $rowIds[$rowId] = true;
                 }
-
-                $event->attendance_id = $row->getKey();
-                $event->save();
-
-                $processed++;
-                $rowIds[$row->getKey()] = true;
             }
+
+            $open = Attendance::query()
+                ->withoutGlobalScope(CompanyScope::class)
+                ->whereKey(array_keys($rowIds))
+                ->whereNull('check_out')
+                ->count();
+
+            $this->info("Processed {$processed} events into ".count($rowIds)." rows ({$open} open).");
+
+            return self::SUCCESS;
+        } finally {
+            $lock->release();
         }
-
-        $rows = Attendance::query()->whereIn('id', array_keys($rowIds))->get();
-        $open = $rows->whereNull('check_out')->count();
-
-        $this->info("Processed {$processed} events into ".count($rowIds)." rows ({$open} open).");
-
-        return self::SUCCESS;
     }
 }
