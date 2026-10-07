@@ -3,6 +3,8 @@
 require_once __DIR__.'/../../../support/tests/Helpers/TestBootstrapHelper.php';
 
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Schema;
+use Webkul\Attendance\Filament\Clusters\Configurations;
 use Webkul\BiometricAttendance\BiometricAttendanceServiceProvider;
 use Webkul\BiometricAttendance\Console\ReadAttendanceCommand;
 use Webkul\BiometricAttendance\Console\TestConnectionCommand;
@@ -13,7 +15,6 @@ use Webkul\BiometricAttendance\Services\DeviceInfo;
 use Webkul\BiometricAttendance\Services\PhpZktecoClient;
 use Webkul\BiometricAttendance\Services\PunchRecord;
 use Webkul\BiometricAttendance\Services\ZktecoConnectionException;
-use Webkul\Employee\Filament\Clusters\Configurations;
 
 beforeEach(function () {
     TestBootstrapHelper::ensurePluginInstalled('biometric-attendance');
@@ -196,8 +197,13 @@ it('ships the plugin card icon used by the plugins list', function () {
         ->and(file_exists(base_path('resources/svg/biometric-attendance.svg')))->toBeTrue();
 });
 
-it('lives under the employees configurations cluster in the attendance group', function () {
+it('lives in the attendance configurations cluster', function () {
     expect(DeviceResource::getCluster())->toBe(Configurations::class)
-        ->and(DeviceResource::getNavigationGroup())->toBe('Attendance')
         ->and(DeviceResource::getSlug())->toBe('biometric-attendance/devices');
+});
+
+it('installs the attendance layer as a dependency', function () {
+    TestBootstrapHelper::ensurePluginInstalled('biometric-attendance');
+
+    expect(Schema::hasTable('attendance_events'))->toBeTrue();
 });
