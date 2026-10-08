@@ -6,8 +6,9 @@
             type="button"
             wire:click="$set('activeTab', 'daily')"
             @class([
-                'fi-btn rounded-lg px-3 py-2 text-sm font-medium',
-                'fi-btn-primary' => $activeTab === 'daily',
+                'rounded-lg border px-3 py-2 text-sm font-medium',
+                'border-transparent bg-primary-600 text-white' => $activeTab === 'daily',
+                'border-gray-300 bg-white text-gray-700 dark:border-white/10 dark:bg-white/5 dark:text-gray-200' => $activeTab !== 'daily',
             ])
         >
             {{ __('attendance::filament/pages/overview.tabs.daily') }}
@@ -17,8 +18,9 @@
             type="button"
             wire:click="$set('activeTab', 'monthly')"
             @class([
-                'fi-btn rounded-lg px-3 py-2 text-sm font-medium',
-                'fi-btn-primary' => $activeTab === 'monthly',
+                'rounded-lg border px-3 py-2 text-sm font-medium',
+                'border-transparent bg-primary-600 text-white' => $activeTab === 'monthly',
+                'border-gray-300 bg-white text-gray-700 dark:border-white/10 dark:bg-white/5 dark:text-gray-200' => $activeTab !== 'monthly',
             ])
         >
             {{ __('attendance::filament/pages/overview.tabs.monthly') }}
@@ -26,6 +28,7 @@
     </div>
 
     @if ($activeTab === 'daily')
+        @php($entries = $this->getEntries())
         <div class="fi-table overflow-x-auto rounded-xl border border-gray-200 dark:border-white/10">
             <table class="w-full divide-y divide-gray-200 text-sm dark:divide-white/10">
                 <thead>
@@ -60,6 +63,12 @@
     @else
         <p class="text-sm text-gray-500 dark:text-gray-400">{{ __('attendance::filament/pages/overview.grid.legend') }}</p>
 
+        @php($gridDays = $this->getGridDays())
+        @php($grid = $this->getGrid())
+
+        @if ($gridDays === [] || $grid === [])
+            <p class="text-sm text-gray-500 dark:text-gray-400">{{ __('attendance::filament/pages/overview.table.empty') }}</p>
+        @else
         <div class="fi-table overflow-x-auto rounded-xl border border-gray-200 dark:border-white/10">
             <table class="w-full divide-y divide-gray-200 text-sm dark:divide-white/10">
                 <thead>
@@ -82,5 +91,6 @@
                 </tbody>
             </table>
         </div>
+        @endif
     @endif
 </x-filament-panels::page>

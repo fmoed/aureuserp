@@ -38,6 +38,16 @@ class AttendanceOverviewService
 
     public const STATUS_HOLIDAY = 'holiday';
 
+    /**
+     * Per-instance calendar fallback cache (company/global lookups repeat
+     * for every calendar-less employee of the same company). Safe because
+     * the service is resolved transiently per report run, never shared
+     * across requests or queue jobs.
+     *
+     * @var array<string, ?Calendar>
+     */
+    private array $calendarCache = [];
+
     public static function rangeDays(string|Carbon $from, string|Carbon $to): int
     {
         return Carbon::parse($from)->startOfDay()->diffInDays(Carbon::parse($to)->startOfDay());
@@ -160,22 +170,30 @@ class AttendanceOverviewService
         }
 
         if ($employee->company_id !== null) {
-            $companyCalendar = Calendar::query()
-                ->where('company_id', $employee->company_id)
-                ->where('is_active', true)
-                ->orderBy('id')
-                ->first();
+            $key = "company:{$employee->company_id}";
 
-            if ($companyCalendar) {
-                return $companyCalendar;
+            if (! array_key_exists($key, $this->calendarCache)) {
+                $this->calendarCache[$key] = Calendar::query()
+                    ->where('company_id', $employee->company_id)
+                    ->where('is_active', true)
+                    ->orderBy('id')
+                    ->first();
+            }
+
+            if ($this->calendarCache[$key]) {
+                return $this->calendarCache[$key];
             }
         }
 
-        return Calendar::query()
-            ->whereNull('company_id')
-            ->where('is_active', true)
-            ->orderBy('id')
-            ->first();
+        if (! array_key_exists('global', $this->calendarCache)) {
+            $this->calendarCache['global'] = Calendar::query()
+                ->whereNull('company_id')
+                ->where('is_active', true)
+                ->orderBy('id')
+                ->first();
+        }
+
+        return $this->calendarCache['global'];
     }
 
     /**

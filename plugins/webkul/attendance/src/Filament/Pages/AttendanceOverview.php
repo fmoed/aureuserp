@@ -42,14 +42,14 @@ class AttendanceOverview extends Page implements HasForms
 
     public string $activeTab = 'daily';
 
-    /** @var list<array{employee_id: int, name: string, date: string, status: string, leave_label: ?string, half_day: bool, check_in: ?string, check_out: ?string, minutes: ?int}> */
-    public array $entries = [];
-
-    /** @var list<string> */
-    public array $gridDays = [];
-
-    /** @var array<int, array{name: string, cells: array<string, string>}> */
-    public array $grid = [];
+    /**
+     * Within-request memo for derived data. These props stay out of the
+     * Livewire snapshot on purpose: entries for a full range would bloat
+     * every roundtrip payload, while filter inputs re-derive them cheaply.
+     *
+     * @var list<array{employee_id: int, name: string, date: string, status: string, leave_label: ?string, half_day: bool, check_in: ?string, check_out: ?string, minutes: ?int}>|null
+     */
+    private ?array $entriesMemo = null;
 
     public static function getSlug(?Panel $panel = null): string
     {
@@ -108,13 +108,11 @@ class AttendanceOverview extends Page implements HasForms
                     ->label(__('attendance::filament/pages/overview.form.employee'))
                     ->options(fn (): array => Employee::query()->orderBy('name')->pluck('name', 'id')->all())
                     ->searchable()
-                    ->placeholder(__('attendance::filament/pages/overview.form.all-employees'))
-                    ->live(),
+                    ->placeholder(__('attendance::filament/pages/overview.form.all-employees')),
                 DatePicker::make('date_from')
                     ->label(__('attendance::filament/pages/overview.form.date-from'))
                     ->required()
-                    ->maxDate(Carbon::today()->toDateString())
-                    ->live(),
+                    ->maxDate(Carbon::today()->toDateString()),
                 DatePicker::make('date_to')
                     ->label(__('attendance::filament/pages/overview.form.date-to'))
                     ->required()
@@ -134,8 +132,7 @@ class AttendanceOverview extends Page implements HasForms
                                 ]));
                             }
                         };
-                    }])
-                    ->live(),
+                    }]),
             ])
             ->columns(4);
     }
@@ -147,18 +144,35 @@ class AttendanceOverview extends Page implements HasForms
         $this->employeeId = $data['employee_id'] ?? null;
         $this->dateFrom = $data['date_from'];
         $this->dateTo = $data['date_to'];
+        $this->entriesMemo = null;
+    }
 
-        $service = app(AttendanceOverviewService::class);
-
-        $entries = $service->daily(
+    /**
+     * @return list<array{employee_id: int, name: string, date: string, status: string, leave_label: ?string, half_day: bool, check_in: ?string, check_out: ?string, minutes: ?int}>
+     */
+    public function getEntries(): array
+    {
+        return $this->entriesMemo ??= app(AttendanceOverviewService::class)->daily(
             $this->filteredEmployees(),
             Carbon::parse($this->dateFrom),
             Carbon::parse($this->dateTo),
-        );
+        )->all();
+    }
 
-        $this->entries = $entries->all();
-        $this->gridDays = $entries->pluck('date')->unique()->sort()->values()->all();
-        $this->grid = $entries->groupBy('employee_id')->map(fn ($rows): array => [
+    /**
+     * @return list<string>
+     */
+    public function getGridDays(): array
+    {
+        return collect($this->getEntries())->pluck('date')->unique()->sort()->values()->all();
+    }
+
+    /**
+     * @return array<int, array{name: string, cells: array<string, string>}>
+     */
+    public function getGrid(): array
+    {
+        return collect($this->getEntries())->groupBy('employee_id')->map(fn ($rows): array => [
             'name'  => $rows->first()['name'],
             'cells' => $rows->mapWithKeys(fn (array $row): array => [$row['date'] => $this->cellLetter($row['status'])])->all(),
         ])->all();
