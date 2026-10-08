@@ -311,6 +311,8 @@ it('gives employees without a calendar zero workdays instead of fake absences', 
 
     CompanyHelper::actingAsCompanyUser($company);
 
+    Calendar::query()->forceDelete();
+
     $employee = Employee::factory()->create([
         'name'        => 'Overview Emp NC',
         'user_id'     => User::factory(),
@@ -328,6 +330,69 @@ it('gives employees without a calendar zero workdays instead of fake absences', 
 
     expect($summary['workdays'])->toBe(0)
         ->and($summary['absent'])->toBe(0);
+});
+
+it('falls back to a global calendar when the employee has none', function () {
+    $company = CompanyHelper::company();
+
+    CompanyHelper::actingAsCompanyUser($company);
+
+    createWeekCalendar(null);
+
+    $employee = Employee::factory()->create([
+        'name'        => 'Overview Emp G',
+        'user_id'     => User::factory(),
+        'time_zone'   => 'UTC',
+        'calendar_id' => null,
+        'company_id'  => $company->id,
+    ]);
+
+    $service = app(AttendanceOverviewService::class);
+
+    $summary = $service->summary(
+        Employee::whereKey($employee->id)->get(),
+        Carbon::parse('2026-09-07'), Carbon::parse('2026-09-13')
+    )->first();
+
+    expect($summary['workdays'])->toBe(5);
+});
+
+it('prefers the company calendar over the global one', function () {
+    $company = CompanyHelper::company();
+
+    CompanyHelper::actingAsCompanyUser($company);
+
+    createWeekCalendar(null);
+
+    $companyCalendar = Calendar::factory()->create(['timezone' => 'UTC', 'company_id' => $company->id]);
+
+    foreach ([['morning', 8, 12], ['afternoon', 13, 17]] as [$period, $from, $to]) {
+        CalendarAttendance::create([
+            'name'         => "monday {$period}",
+            'day_of_week'  => 'monday',
+            'day_period'   => $period,
+            'calendar_id'  => $companyCalendar->id,
+            'hour_from'    => $from,
+            'hour_to'      => $to,
+        ]);
+    }
+
+    $employee = Employee::factory()->create([
+        'name'        => 'Overview Emp P',
+        'user_id'     => User::factory(),
+        'time_zone'   => 'UTC',
+        'calendar_id' => null,
+        'company_id'  => $company->id,
+    ]);
+
+    $service = app(AttendanceOverviewService::class);
+
+    $entries = $service->daily(
+        Employee::whereKey($employee->id)->get(),
+        Carbon::parse('2026-09-07'), Carbon::parse('2026-09-13')
+    );
+
+    expect($entries->pluck('date')->all())->toBe(['2026-09-07']);
 });
 
 it('measures range length in days with a ninety-three-day limit', function () {

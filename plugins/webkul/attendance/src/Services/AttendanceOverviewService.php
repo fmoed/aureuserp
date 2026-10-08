@@ -147,18 +147,32 @@ class AttendanceOverviewService
             ->all();
     }
 
+    /**
+     * Schedule resolution: the employee calendar first, then the company
+     * calendar, then a global (company-less) calendar shared by everyone.
+     * A null-company calendar is the normal single-roster setup, so it
+     * must apply instead of yielding zero workdays.
+     */
     protected function calendarFor(Employee $employee): ?Calendar
     {
         if ($employee->calendar) {
             return $employee->calendar;
         }
 
-        if ($employee->company_id === null) {
-            return null;
+        if ($employee->company_id !== null) {
+            $companyCalendar = Calendar::query()
+                ->where('company_id', $employee->company_id)
+                ->where('is_active', true)
+                ->orderBy('id')
+                ->first();
+
+            if ($companyCalendar) {
+                return $companyCalendar;
+            }
         }
 
         return Calendar::query()
-            ->where('company_id', $employee->company_id)
+            ->whereNull('company_id')
             ->where('is_active', true)
             ->orderBy('id')
             ->first();
