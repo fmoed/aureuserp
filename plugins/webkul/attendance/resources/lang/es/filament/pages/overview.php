@@ -8,10 +8,12 @@ return [
     ],
 
     'form' => [
+        'heading'        => 'Filtros',
         'employee'       => 'Empleado',
         'all-employees'  => 'Todos los empleados',
         'date-from'      => 'Desde',
         'date-to'        => 'Hasta',
+        'apply'          => 'Aplicar',
         'range-too-wide' => 'El rango no debe superar :days días.',
     ],
 
@@ -38,6 +40,10 @@ return [
         'absent'   => 'Ausente',
         'pending'  => 'Pendiente',
         'half-day' => 'Medio día',
+    ],
+
+    'empty' => [
+        'heading' => 'Sin días laborables para mostrar.',
     ],
 
     'grid' => [

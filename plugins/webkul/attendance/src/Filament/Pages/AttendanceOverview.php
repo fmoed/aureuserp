@@ -15,6 +15,7 @@ use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Webkul\Attendance\Filament\Exports\AbsenceReportExporter;
@@ -41,6 +42,12 @@ class AttendanceOverview extends Page implements HasForms
     public string $dateTo;
 
     public string $activeTab = 'daily';
+
+    public int $dailyPage = 1;
+
+    public int $dailyPerPage = 25;
+
+    public const DAILY_PER_PAGE_OPTIONS = [10, 25, 50];
 
     /**
      * Within-request memo for derived data. These props stay out of the
@@ -144,7 +151,28 @@ class AttendanceOverview extends Page implements HasForms
         $this->employeeId = $data['employee_id'] ?? null;
         $this->dateFrom = $data['date_from'];
         $this->dateTo = $data['date_to'];
+        $this->dailyPage = 1;
         $this->entriesMemo = null;
+    }
+
+    public function updatedDailyPerPage(): void
+    {
+        $this->dailyPage = 1;
+    }
+
+    public function nextPage(string $pageName = 'page'): void
+    {
+        $this->dailyPage++;
+    }
+
+    public function previousPage(string $pageName = 'page'): void
+    {
+        $this->dailyPage = max(1, $this->dailyPage - 1);
+    }
+
+    public function gotoPage(int $page, string $pageName = 'page'): void
+    {
+        $this->dailyPage = max(1, $page);
     }
 
     /**
@@ -176,6 +204,23 @@ class AttendanceOverview extends Page implements HasForms
             'name'  => $rows->first()['name'],
             'cells' => $rows->mapWithKeys(fn (array $row): array => [$row['date'] => $this->cellLetter($row['status'])])->all(),
         ])->all();
+    }
+
+    /**
+     * Daily entries paginated like every other list (25 by default).
+     */
+    public function getDailyPaginator(): LengthAwarePaginator
+    {
+        $total = count($this->getEntries());
+        $page = $total === 0 ? 1 : min($this->dailyPage, (int) ceil($total / $this->dailyPerPage));
+
+        return new LengthAwarePaginator(
+            array_slice($this->getEntries(), ($page - 1) * $this->dailyPerPage, $this->dailyPerPage),
+            $total,
+            $this->dailyPerPage,
+            $page,
+            ['path' => request()->url(), 'pageName' => 'page'],
+        );
     }
 
     protected function getHeaderActions(): array
@@ -224,23 +269,23 @@ class AttendanceOverview extends Page implements HasForms
         return match ($entry['status']) {
             AttendanceOverviewService::STATUS_PRESENT => [
                 'label' => __('attendance::filament/pages/overview.statuses.present'),
-                'color' => '#22c55e',
+                'color' => 'success',
             ],
             AttendanceOverviewService::STATUS_ABSENT => [
                 'label' => __('attendance::filament/pages/overview.statuses.absent'),
-                'color' => '#ef4444',
+                'color' => 'danger',
             ],
             AttendanceOverviewService::STATUS_ON_LEAVE => [
                 'label' => $entry['leave_label'].($entry['half_day'] ? ' · '.__('attendance::filament/pages/overview.statuses.half-day') : ''),
-                'color' => '#3b82f6',
+                'color' => 'info',
             ],
             AttendanceOverviewService::STATUS_ON_LEAVE_PENDING => [
                 'label' => $entry['leave_label'].' · '.__('attendance::filament/pages/overview.statuses.pending'),
-                'color' => '#f59e0b',
+                'color' => 'warning',
             ],
             default => [
                 'label' => (string) $entry['leave_label'],
-                'color' => '#6b7280',
+                'color' => 'gray',
             ],
         };
     }
