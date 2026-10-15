@@ -42,6 +42,15 @@ return [
                     'failed-title' => 'Connection failed',
                 ],
             ],
+            'sync-now' => [
+                'label' => 'Sync Now',
+
+                'notification' => [
+                    'title'        => 'Sync completed',
+                    'failed-title' => 'Sync failed',
+                    'body'         => 'Stored :stored, already present :skipped, backfilled :backfilled.',
+                ],
+            ],
         ],
     ],
 ];
