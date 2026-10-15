@@ -13,7 +13,8 @@ return [
             'punched-at'  => 'Punch Time',
             'direction'   => 'Direction',
             'source'      => 'Source',
-            'linked-row'  => 'Linked Row',
+            'linked-row'  => 'Linked record',
+            'linked-hint' => 'Empty means awaiting auto-pairing. Fix times in Attendance, not here.',
         ],
 
         'directions' => [
@@ -23,11 +24,12 @@ return [
         ],
 
         'filters' => [
-            'employee'   => 'Employee',
-            'source'     => 'Source',
-            'punched-at' => 'Punch Date',
-            'date-from'  => 'From',
-            'date-to'    => 'To',
+            'employee'       => 'Employee',
+            'source'         => 'Source',
+            'punched-at'     => 'Punch Date',
+            'date-from'      => 'From',
+            'date-to'        => 'To',
+            'range-too-wide' => 'The range must not exceed :days days.',
         ],
 
         'toolbar-actions' => [

@@ -1,7 +1,7 @@
 <?php
 
 return [
-    'heading' => 'Attendance This Month',
+    'heading' => 'Attendance This Month (ignores table filters)',
 
     'stats' => [
         'records'               => 'Records',
@@ -10,7 +10,7 @@ return [
         'employees-description' => 'Distinct employees present',
         'hours'                 => 'Hours',
         'hours-description'     => 'Total worked hours',
-        'open'                  => 'Open Days',
-        'open-description'      => 'Without check-out',
+        'open'                  => 'Open records',
+        'open-description'      => 'Records without check-out — needs action',
     ],
 ];

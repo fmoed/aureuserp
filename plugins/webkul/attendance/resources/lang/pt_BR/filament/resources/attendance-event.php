@@ -13,7 +13,8 @@ return [
             'punched-at'  => 'Hora da marcação',
             'direction'   => 'Direção',
             'source'      => 'Fonte',
-            'linked-row'  => 'Linha vinculada',
+            'linked-row'  => 'Registro vinculado',
+            'linked-hint' => 'Vazio = aguardando vínculo. Corrija em Presenças.',
         ],
 
         'directions' => [
@@ -23,11 +24,12 @@ return [
         ],
 
         'filters' => [
-            'employee'   => 'Funcionário',
-            'source'     => 'Fonte',
-            'punched-at' => 'Data da marcação',
-            'date-from'  => 'De',
-            'date-to'    => 'Até',
+            'employee'       => 'Funcionário',
+            'source'         => 'Fonte',
+            'punched-at'     => 'Data da marcação',
+            'date-from'      => 'De',
+            'date-to'        => 'Até',
+            'range-too-wide' => 'O intervalo não deve exceder :days dias.',
         ],
 
         'toolbar-actions' => [

@@ -13,7 +13,8 @@ return [
             'punched-at'  => 'وقت البصمة',
             'direction'   => 'الاتجاه',
             'source'      => 'المصدر',
-            'linked-row'  => 'الصف المرتبط',
+            'linked-row'  => 'السجل المرتبط',
+            'linked-hint' => 'الخانة الفارغة تعني بانتظار الربط التلقائي. صحّح الأوقات من الحضور وليس هنا.',
         ],
 
         'directions' => [
@@ -23,11 +24,12 @@ return [
         ],
 
         'filters' => [
-            'employee'   => 'الموظف',
-            'source'     => 'المصدر',
-            'punched-at' => 'تاريخ البصمة',
-            'date-from'  => 'من',
-            'date-to'    => 'إلى',
+            'employee'       => 'الموظف',
+            'source'         => 'المصدر',
+            'punched-at'     => 'تاريخ البصمة',
+            'date-from'      => 'من',
+            'date-to'        => 'إلى',
+            'range-too-wide' => 'يجب ألا يتجاوز النطاق :days يوماً.',
         ],
 
         'toolbar-actions' => [

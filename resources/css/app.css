@@ -197,7 +197,11 @@
     text-align: right;
 }
 
-[dir="rtl"] .fi-ta-header-cell-label {
+/* Filament table headers follow the column alignment (centered columns
+   keep centered labels). Only force right alignment on headers whose
+   column has no explicit alignment, otherwise values drift away from
+   their centered headers in RTL. */
+[dir="rtl"] .fi-ta-header-cell:not(.fi-align-center):not(.fi-align-end) .fi-ta-header-cell-label {
     text-align: right;
 }
 

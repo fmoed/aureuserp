@@ -6,7 +6,11 @@ return [
         'workdays'     => 'Total Workdays',
         'present'      => 'Present Days',
         'absent'       => 'Absent Days',
-        'absence-rate' => 'Absence %',
+        'absence-rate' => 'Absence rate',
+        'on-leave'     => 'On Leave Days',
+        'holidays'     => 'Public Holidays',
+        'pending'      => 'Pending Leave Days',
+        'minutes'      => 'Worked Minutes',
     ],
 
     'options' => [

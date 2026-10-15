@@ -12,6 +12,7 @@ use Illuminate\Support\Carbon;
 use Webkul\Attendance\Filament\Exports\AttendanceEventExporter;
 use Webkul\Attendance\Models\Attendance;
 use Webkul\Attendance\Models\AttendanceEvent;
+use Webkul\Attendance\Services\AttendanceOverviewService;
 
 class AttendanceEventsTable
 {
@@ -56,6 +57,24 @@ class AttendanceEventsTable
         return Carbon::parse($raw, 'UTC')->setTimezone($timezone);
     }
 
+    /**
+     * A punch date range wider than MAX_RANGE_DAYS is rejected with a
+     * validation error (ListAttendanceEvents::updatedTableFilters); the
+     * query guard skips the bounds so a rejected range never silently
+     * hides rows either.
+     */
+    public static function rangeIsOversized(array $data): bool
+    {
+        $from = $data['punched_from'] ?? null;
+        $to = $data['punched_to'] ?? null;
+
+        if (! $from || ! $to) {
+            return false;
+        }
+
+        return abs(Carbon::parse($from)->diffInDays($to)) > AttendanceOverviewService::MAX_RANGE_DAYS;
+    }
+
     public static function configure(Table $table): Table
     {
         return $table
@@ -92,6 +111,7 @@ class AttendanceEventsTable
                     ->label(__('attendance::filament/resources/attendance-event.table.columns.linked-row'))
                     ->state(fn (AttendanceEvent $event) => static::linkedCheckIn($event))
                     ->dateTime()
+                    ->tooltip(__('attendance::filament/resources/attendance-event.table.columns.linked-hint'))
                     ->placeholder('—'),
             ])
             ->filters([
@@ -119,9 +139,15 @@ class AttendanceEventsTable
                         DatePicker::make('punched_to')
                             ->label(__('attendance::filament/resources/attendance-event.table.filters.date-to')),
                     ])
-                    ->query(fn ($query, array $data) => $query
-                        ->when($data['punched_from'] ?? null, fn ($query, string $date) => $query->whereDate('punched_at', '>=', $date))
-                        ->when($data['punched_to'] ?? null, fn ($query, string $date) => $query->whereDate('punched_at', '<=', $date))),
+                    ->query(function ($query, array $data) {
+                        if (static::rangeIsOversized($data)) {
+                            return $query;
+                        }
+
+                        return $query
+                            ->when($data['punched_from'] ?? null, fn ($query, string $date) => $query->whereDate('punched_at', '>=', $date))
+                            ->when($data['punched_to'] ?? null, fn ($query, string $date) => $query->whereDate('punched_at', '<=', $date));
+                    }),
             ])
             ->toolbarActions([
                 ExportAction::make()

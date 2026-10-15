@@ -6,7 +6,11 @@ return [
         'workdays'     => 'Jours ouvrés totaux',
         'present'      => 'Jours présents',
         'absent'       => 'Jours absents',
-        'absence-rate' => 'Absence %',
+        'absence-rate' => "Taux d'absentéisme",
+        'on-leave'     => 'Jours de congé',
+        'holidays'     => 'Jours fériés',
+        'pending'      => 'Congés en attente',
+        'minutes'      => 'Minutes travaillées',
     ],
 
     'options' => [
