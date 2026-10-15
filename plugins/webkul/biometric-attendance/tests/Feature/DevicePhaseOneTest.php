@@ -199,7 +199,7 @@ it('ships the plugin card icon used by the plugins list', function () {
 
 it('lives in the attendance configurations cluster', function () {
     expect(DeviceResource::getCluster())->toBe(Configurations::class)
-        ->and(DeviceResource::getSlug())->toBe('biometric-attendance/devices');
+        ->and(DeviceResource::getSlug())->toBe('devices');
 });
 
 it('installs the attendance layer as a dependency', function () {
