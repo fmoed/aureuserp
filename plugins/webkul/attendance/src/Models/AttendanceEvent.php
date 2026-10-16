@@ -18,6 +18,20 @@ class AttendanceEvent extends Model
 
     public const DIRECTION_UNKNOWN = 0;
 
+    /**
+     * Human label for a punch direction. The device `state` byte is the
+     * verify mode, not IN/OUT, so most punches stay unknown until a
+     * hardware check proves otherwise. Pairing ignores direction anyway.
+     */
+    public static function directionLabel(int $direction): string
+    {
+        return match ($direction) {
+            self::DIRECTION_IN  => __('attendance::filament/resources/attendance-event.table.directions.in'),
+            self::DIRECTION_OUT => __('attendance::filament/resources/attendance-event.table.directions.out'),
+            default             => __('attendance::filament/resources/attendance-event.table.directions.unknown'),
+        };
+    }
+
     protected $table = 'attendance_events';
 
     protected $fillable = [

@@ -6,6 +6,8 @@ use Filament\Panel;
 use Illuminate\Support\Facades\Gate;
 use Webkul\Attendance\Console\ProcessEventsCommand;
 use Webkul\Attendance\Models\Attendance;
+use Webkul\Attendance\Models\AttendanceEvent;
+use Webkul\Attendance\Policies\AttendanceEventPolicy;
 use Webkul\Attendance\Policies\AttendancePolicy;
 use Webkul\PluginManager\Console\Commands\InstallCommand;
 use Webkul\PluginManager\Console\Commands\UninstallCommand;
@@ -20,6 +22,7 @@ class AttendanceServiceProvider extends PackageServiceProvider
     {
         $package->name(static::$name)
             ->hasTranslations()
+            ->hasViews()
             ->hasMigrations([
                 '2026_09_24_000001_create_attendance_attendances_table',
                 '2026_09_30_000001_add_source_label_to_attendance_attendances_table',
@@ -52,5 +55,6 @@ class AttendanceServiceProvider extends PackageServiceProvider
     public function packageBooted(): void
     {
         Gate::policy(Attendance::class, AttendancePolicy::class);
+        Gate::policy(AttendanceEvent::class, AttendanceEventPolicy::class);
     }
 }

@@ -2,7 +2,6 @@
 
 namespace Webkul\BiometricAttendance\Filament\Resources;
 
-use Filament\Panel;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Tables\Table;
@@ -47,11 +46,6 @@ class DeviceResource extends Resource
     public static function table(Table $table): Table
     {
         return DevicesTable::configure($table);
-    }
-
-    public static function getSlug(?Panel $panel = null): string
-    {
-        return 'biometric-attendance/devices';
     }
 
     public static function getPages(): array
