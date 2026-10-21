@@ -1,6 +1,6 @@
 {
     "name": "webkul/biometric-attendance",
-    "description": "ZKTeco biometric device integration (Phase 1: connection test + raw punch reading)",
+    "description": "ZKTeco biometric device integration: device management, raw punch sync and push to the attendance layer",
     "authors": [
         {
             "name": "AureusERP",

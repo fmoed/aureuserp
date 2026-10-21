@@ -11,7 +11,7 @@ class ReadAttendanceCommand extends Command
 {
     protected $signature = 'biometric:read {device : Device ID or name} {--limit=10 : Show only the first N records}';
 
-    protected $description = 'Read raw attendance logs from a ZKTeco device and print them (read-only, no database writes)';
+    protected $description = 'Read raw attendance logs from a ZKTeco device and print them (read-only on the device; updates the device sync status)';
 
     public function handle(ZktecoClientInterface $client): int
     {

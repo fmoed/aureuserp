@@ -191,6 +191,11 @@ it('prints connection stages with the debug flag', function () {
     expect($device->fresh()->last_error)->toContain('network layer failed');
 });
 
+it('ships the plugin card icon used by the plugins list', function () {
+    expect(file_exists(public_path('svg/biometric-attendance.svg')))->toBeTrue()
+        ->and(file_exists(base_path('resources/svg/biometric-attendance.svg')))->toBeTrue();
+});
+
 it('lives under the employees configurations cluster in the attendance group', function () {
     expect(DeviceResource::getCluster())->toBe(Configurations::class)
         ->and(DeviceResource::getNavigationGroup())->toBe('Attendance')

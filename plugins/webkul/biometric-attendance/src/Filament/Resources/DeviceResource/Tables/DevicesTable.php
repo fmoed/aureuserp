@@ -11,7 +11,11 @@ use Filament\Notifications\Notification;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
+use Illuminate\Support\Facades\Artisan;
+use Throwable;
+use Webkul\Attendance\Console\ProcessEventsCommand;
 use Webkul\BiometricAttendance\Contracts\ZktecoClientInterface;
+use Webkul\BiometricAttendance\Services\DeviceSyncService;
 use Webkul\BiometricAttendance\Services\ZktecoConnectionException;
 
 class DevicesTable
@@ -77,6 +81,47 @@ class DevicesTable
                             ->success()
                             ->title(__('biometric-attendance::filament/resources/device.table.actions.test-connection.notification.title'))
                             ->body(($info->deviceName ?? $record->host).' · '.($info->serialNumber ?? '—'))
+                            ->send();
+                    }),
+                Action::make('syncNow')
+                    ->label('Sync now')
+                    ->icon('heroicon-o-arrow-down-tray')
+                    ->color('success')
+                    ->action(function ($record) {
+                        try {
+                            $result = app(DeviceSyncService::class)->sync($record);
+                        } catch (ZktecoConnectionException $e) {
+                            $record->update(['last_error' => $e->getMessage()]);
+
+                            Notification::make()
+                                ->danger()
+                                ->title('Sync failed')
+                                ->body($e->getMessage())
+                                ->send();
+
+                            return;
+                        } catch (Throwable $e) {
+                            $record->update(['last_error' => $e->getMessage()]);
+
+                            Notification::make()
+                                ->danger()
+                                ->title('Sync failed')
+                                ->body($e->getMessage())
+                                ->send();
+
+                            return;
+                        }
+
+                        Artisan::call('biometric:push-events');
+
+                        if (class_exists(ProcessEventsCommand::class)) {
+                            Artisan::call('attendance:process-events');
+                        }
+
+                        Notification::make()
+                            ->success()
+                            ->title('Sync completed')
+                            ->body("Stored {$result['stored']}, already present {$result['skipped']}, backfilled {$result['backfilled']}.")
                             ->send();
                     }),
                 EditAction::make(),
