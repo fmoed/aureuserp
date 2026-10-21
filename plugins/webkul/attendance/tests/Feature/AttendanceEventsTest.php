@@ -1,0 +1,235 @@
+<?php
+
+require_once __DIR__.'/../../../support/tests/Helpers/TestBootstrapHelper.php';
+require_once __DIR__.'/../../../support/tests/Helpers/FilamentHelper.php';
+
+use Filament\Actions\Exports\Models\Export;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Gate;
+use Livewire\Livewire;
+use Webkul\Attendance\Events\EventGateway;
+use Webkul\Attendance\Filament\Exports\AttendanceEventExporter;
+use Webkul\Attendance\Filament\Resources\AttendanceEventResource;
+use Webkul\Attendance\Filament\Resources\AttendanceEventResource\Pages\ListAttendanceEvents;
+use Webkul\Attendance\Filament\Resources\AttendanceEventResource\Tables\AttendanceEventsTable;
+use Webkul\Attendance\Models\Attendance;
+use Webkul\Attendance\Models\AttendanceEvent;
+use Webkul\Attendance\Policies\AttendanceEventPolicy;
+use Webkul\Attendance\Writers\WriterRegistry;
+use Webkul\Employee\Models\Employee;
+use Webkul\Security\Models\User;
+use Webkul\Support\Enums\NavigationGroup;
+
+beforeEach(function () {
+    TestBootstrapHelper::ensurePluginInstalled('attendance');
+
+    WriterRegistry::flush();
+    WriterRegistry::register('biometric-attendance');
+    WriterRegistry::register('remote');
+});
+
+it('registers the attendance event resource as read-only with slug, group and shield config', function () {
+    expect(AttendanceEventResource::getSlug())->toBe('attendance/attendance-events')
+        ->and(AttendanceEventResource::getNavigationGroup())->toBe(NavigationGroup::Attendance)
+        ->and(AttendanceEventResource::getModelLabel())->toBe('Attendance Event')
+        ->and(array_keys(AttendanceEventResource::getPages()))->toBe(['index'])
+        ->and(config('filament-shield.resources.manage'))->toHaveKey(AttendanceEventResource::class);
+});
+
+it('maps the attendance event policy', function () {
+    expect(Gate::getPolicyFor(AttendanceEvent::class))
+        ->toBeInstanceOf(AttendanceEventPolicy::class);
+});
+
+it('authorizes the shield-generated permission names', function () {
+    $user = FilamentHelper::actingAs([
+        'view_any_attendance_attendance::event',
+        'view_attendance_attendance::event',
+    ]);
+
+    $event = EventGateway::push(
+        Employee::factory()->create(['user_id' => User::factory()])->id,
+        '2026-09-24 08:00:00', 0, 'biometric-attendance:3', 'evt-auth'
+    );
+
+    expect($user->can('viewAny', AttendanceEvent::class))->toBeTrue()
+        ->and($user->can('view', $event))->toBeTrue();
+});
+
+it('exposes the expected event exporter columns', function () {
+    $columns = collect(AttendanceEventExporter::getColumns())->map->getName()->all();
+
+    expect($columns)->toBe([
+        'employee.name',
+        'punched_at',
+        'direction',
+        'source',
+        'attendance.check_in',
+        'pushed',
+    ]);
+});
+
+it('maps persisted events to export values on the employee wall clock', function () {
+    $riyadhEmployee = Employee::factory()->create([
+        'user_id'   => User::factory(),
+        'time_zone' => 'Asia/Riyadh',
+    ]);
+
+    $row = Attendance::create([
+        'employee_id'  => $riyadhEmployee->id,
+        'work_date'    => '2026-09-24',
+        'check_in'     => '2026-09-24 05:00:00',
+        'check_out'    => '2026-09-24 13:00:00',
+        'source'       => 'biometric-attendance:3',
+        'source_label' => 'Main Gate',
+    ]);
+
+    $paired = EventGateway::push(
+        $riyadhEmployee->id, '2026-09-24 05:00:00',
+        AttendanceEvent::DIRECTION_IN, 'biometric-attendance:3', 'evt-1', 'Main Gate'
+    );
+    $paired->update(['attendance_id' => $row->id]);
+
+    $pendingOut = EventGateway::push(
+        $riyadhEmployee->id, '2026-09-24 09:00:00',
+        AttendanceEvent::DIRECTION_OUT, 'biometric-attendance:3', 'evt-2', 'Main Gate'
+    );
+
+    $pendingUnknown = EventGateway::push(
+        $riyadhEmployee->id, '2026-09-24 10:00:00',
+        AttendanceEvent::DIRECTION_UNKNOWN, 'biometric-attendance:3', 'evt-3', 'Main Gate'
+    );
+
+    $columns = AttendanceEventExporter::getColumns();
+    $columnMap = collect($columns)->mapWithKeys(fn ($column) => [$column->getName() => $column->getLabel()])->all();
+
+    $export = new Export(['exporter' => AttendanceEventExporter::class]);
+    $exporter = $export->getExporter($columnMap, []);
+
+    expect($exporter($paired->refresh()))->toBe([
+        $riyadhEmployee->name,
+        '2026-09-24 08:00:00',
+        'In',
+        'Main Gate',
+        '2026-09-24 08:00:00',
+        'Paired',
+    ])->and($exporter($pendingOut->refresh()))->toBe([
+        $riyadhEmployee->name,
+        '2026-09-24 12:00:00',
+        'Out',
+        'Main Gate',
+        '',
+        'Pending',
+    ])->and($exporter($pendingUnknown->refresh()))->toBe([
+        $riyadhEmployee->name,
+        '2026-09-24 13:00:00',
+        'Unknown',
+        'Main Gate',
+        '',
+        'Pending',
+    ]);
+});
+
+it('renders the events list page', function () {
+    FilamentHelper::actingAs([
+        'view_any_attendance_attendance::event',
+        'view_attendance_attendance::event',
+    ]);
+
+    Livewire::test(ListAttendanceEvents::class)->assertOk();
+});
+
+it('filters events by employee', function () {
+    FilamentHelper::actingAs(['view_any_attendance_attendance::event']);
+
+    $employeeA = Employee::factory()->create(['user_id' => User::factory()]);
+    $employeeB = Employee::factory()->create(['user_id' => User::factory()]);
+
+    $first = EventGateway::push($employeeA->id, '2026-09-10 08:00:00', 0, 'biometric-attendance:3', 'evt-a1');
+    $second = EventGateway::push($employeeA->id, '2026-09-10 09:00:00', 0, 'biometric-attendance:3', 'evt-a2');
+    $other = EventGateway::push($employeeB->id, '2026-09-10 08:00:00', 0, 'biometric-attendance:3', 'evt-b1');
+
+    Livewire::test(ListAttendanceEvents::class)
+        ->filterTable('employee_id', $employeeA->id)
+        ->assertCanSeeTableRecords([$first, $second])
+        ->assertCanNotSeeTableRecords([$other]);
+});
+
+it('filters events by device source', function () {
+    FilamentHelper::actingAs(['view_any_attendance_attendance::event']);
+
+    $employee = Employee::factory()->create(['user_id' => User::factory()]);
+
+    $device = EventGateway::push($employee->id, '2026-09-10 08:00:00', 0, 'biometric-attendance:3', 'evt-1');
+    $remote = EventGateway::push($employee->id, '2026-09-10 09:00:00', 0, 'remote', 'evt-2');
+
+    Livewire::test(ListAttendanceEvents::class)
+        ->filterTable('source', 'biometric-attendance:3')
+        ->assertCanSeeTableRecords([$device])
+        ->assertCanNotSeeTableRecords([$remote]);
+});
+
+it('filters events by punch date range', function () {
+    FilamentHelper::actingAs(['view_any_attendance_attendance::event']);
+
+    $employee = Employee::factory()->create(['user_id' => User::factory()]);
+
+    $inside = EventGateway::push($employee->id, '2026-09-10 08:00:00', 0, 'biometric-attendance:3', 'evt-1');
+    $outside = EventGateway::push($employee->id, '2026-09-20 08:00:00', 0, 'biometric-attendance:3', 'evt-2');
+
+    Livewire::test(ListAttendanceEvents::class)
+        ->filterTable('punched_at', ['punched_from' => '2026-09-01', 'punched_to' => '2026-09-15'])
+        ->assertCanSeeTableRecords([$inside])
+        ->assertCanNotSeeTableRecords([$outside]);
+});
+
+it('paginates the events list at twenty-five rows by default', function () {
+    FilamentHelper::actingAs(['view_any_attendance_attendance::event']);
+
+    for ($i = 1; $i <= 30; $i++) {
+        $employee = Employee::factory()->create([
+            'name'    => sprintf('Page Emp %02d', $i),
+            'user_id' => User::factory(),
+        ]);
+
+        EventGateway::push(
+            $employee->id,
+            Carbon::parse('2026-09-10 08:00:00')->addMinutes($i)->format('Y-m-d H:i:s'),
+            0, 'biometric-attendance:3', "page-{$i}"
+        );
+    }
+
+    $events = AttendanceEvent::query()->orderBy('punched_at', 'desc')->get();
+
+    Livewire::test(ListAttendanceEvents::class)
+        ->assertCanSeeTableRecords($events->take(25)->all())
+        ->assertCanNotSeeTableRecords($events->skip(25)->all());
+});
+
+it('caps event exports at ten thousand rows', function () {
+    expect(AttendanceEventsTable::EXPORT_MAX_ROWS)->toBe(10000);
+});
+
+it('hides events owned by another company', function () {
+    $companyA = CompanyHelper::company();
+    $companyB = CompanyHelper::company();
+
+    $own = EventGateway::push(
+        Employee::factory()->create(['user_id' => User::factory()])->id,
+        '2026-09-24 08:00:00', 0, 'biometric-attendance:3', 'evt-own'
+    );
+    $own->update(['company_id' => $companyA->id]);
+
+    $other = EventGateway::push(
+        Employee::factory()->create(['user_id' => User::factory()])->id,
+        '2026-09-24 08:00:00', 0, 'biometric-attendance:3', 'evt-other'
+    );
+    $other->update(['company_id' => $companyB->id]);
+
+    CompanyHelper::actingAsCompanyUser($companyA);
+
+    $visible = AttendanceEvent::query()->pluck('id');
+
+    expect($visible)->toContain($own->id)
+        ->not->toContain($other->id);
+});
