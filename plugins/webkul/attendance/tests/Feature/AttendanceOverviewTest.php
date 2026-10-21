@@ -1349,6 +1349,8 @@ it('summarizes the month with totals, legend and daily trend', function () {
             ->and($trend->firstWhere('date', '2026-09-07')['present'])->toBe(1)
             ->and($trend->firstWhere('date', '2026-09-07')['absent'])->toBe(1)
             ->and($trend->firstWhere('date', '2026-09-07')['leave'])->toBe(0)
+            ->and($trend->firstWhere('date', '2026-09-07')['off'])->toBe(0)
+            ->and($trend->firstWhere('date', '2026-09-07')['total'])->toBe(2)
             ->and($trend->firstWhere('date', '2026-09-08')['absent'])->toBe(2)
             ->and($trend->firstWhere('date', '2026-09-09')['leave'])->toBe(1);
     } finally {

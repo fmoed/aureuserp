@@ -261,6 +261,12 @@
         .fi-bar-absent, .fi-dot-absent {
             background-color: #f43f5e !important;
         }
+        .fi-bar-off, .fi-dot-off {
+            background-color: rgba(148, 163, 184, 0.4) !important;
+        }
+        .dark .fi-bar-off, .dark .fi-dot-off {
+            background-color: rgba(148, 163, 184, 0.25) !important;
+        }
 
         /* Auto-fit responsive KPI grid: fills screen width naturally across all displays */
         .fi-kpi-grid {
@@ -387,7 +393,7 @@
         >
             <div class="flex flex-wrap items-center justify-between gap-2">
                 <div class="flex flex-wrap items-center gap-2">
-                    <span class="text-xs font-semibold text-gray-800 dark:text-gray-200">
+                    <span class="text-xs font-semibold text-gray-950 dark:text-white">
                         {{ __('attendance::filament/pages/overview.grid.chart') }}
                     </span>
                     <span class="hidden text-[11px] text-gray-500 sm:inline dark:text-gray-400">
@@ -409,6 +415,10 @@
                             <span class="fi-dot-leave h-2.5 w-2.5 rounded-full" style="background-color: #0ea5e9;"></span>
                             {{ __('attendance::filament/pages/overview.statuses.on-leave') }}
                         </span>
+                        <span class="inline-flex items-center gap-1.5">
+                            <span class="fi-dot-off h-2.5 w-2.5 rounded-full"></span>
+                            {{ __('attendance::filament/pages/overview.statuses.weekly-off') }}
+                        </span>
                     </div>
 
                     <button
@@ -429,32 +439,64 @@
                 <div class="flex min-w-max items-end gap-1 sm:min-w-0 sm:gap-1.5">
                     @foreach ($trend as $day)
                         @php
-                            $dayTotal = $day['present'] + $day['absent'] + $day['leave'];
+                            $dayWorking = $day['present'] + $day['absent'] + $day['leave'];
+                            $dayOff = $day['off'] ?? 0;
+                            $dayTotal = $day['total'] ?? ($dayWorking + $dayOff);
                             $dayNumber = \Illuminate\Support\Carbon::parse($day['date'])->format('j');
 
                             if ($dayTotal > 0) {
                                 $dayPresentPct = round(($day['present'] / $dayTotal) * 100, 1);
                                 $dayLeavePct = round(($day['leave'] / $dayTotal) * 100, 1);
-                                $dayAbsentPct = max(0, round(100 - $dayPresentPct - $dayLeavePct, 1));
+                                $dayAbsentPct = round(($day['absent'] / $dayTotal) * 100, 1);
+                                $dayOffPct = max(0, round(100 - $dayPresentPct - $dayLeavePct - $dayAbsentPct, 1));
                             } else {
                                 $dayPresentPct = 0;
                                 $dayLeavePct = 0;
                                 $dayAbsentPct = 0;
+                                $dayOffPct = 0;
                             }
 
-                            $tooltipText = sprintf(
-                                '%s — %s: %d (%s%%) | %s: %d (%s%%) | %s: %d (%s%%)',
-                                $day['label'],
-                                __('attendance::filament/pages/overview.statuses.present'),
-                                $day['present'],
-                                $dayPresentPct,
-                                __('attendance::filament/pages/overview.statuses.absent'),
-                                $day['absent'],
-                                $dayAbsentPct,
-                                __('attendance::filament/pages/overview.statuses.on-leave'),
-                                $day['leave'],
-                                $dayLeavePct,
-                            );
+                            $tooltipParts = [];
+
+                            if ($dayWorking > 0 || $dayTotal === 0) {
+                                $tooltipParts[] = sprintf(
+                                    '%s: %d (%s%%)',
+                                    __('attendance::filament/pages/overview.statuses.present'),
+                                    $day['present'],
+                                    $dayPresentPct,
+                                );
+                                $tooltipParts[] = sprintf(
+                                    '%s: %d (%s%%)',
+                                    __('attendance::filament/pages/overview.statuses.absent'),
+                                    $day['absent'],
+                                    $dayAbsentPct,
+                                );
+                                if ($day['leave'] > 0) {
+                                    $tooltipParts[] = sprintf(
+                                        '%s: %d (%s%%)',
+                                        __('attendance::filament/pages/overview.statuses.on-leave'),
+                                        $day['leave'],
+                                        $dayLeavePct,
+                                    );
+                                }
+                                if ($dayOff > 0) {
+                                    $tooltipParts[] = sprintf(
+                                        '%s: %d (%s%%)',
+                                        __('attendance::filament/pages/overview.statuses.weekly-off'),
+                                        $dayOff,
+                                        $dayOffPct,
+                                    );
+                                }
+                            } else {
+                                $tooltipParts[] = sprintf(
+                                    '%s: %d (%s%%)',
+                                    __('attendance::filament/pages/overview.statuses.weekly-off'),
+                                    $dayOff,
+                                    $dayOffPct,
+                                );
+                            }
+
+                            $tooltipText = $day['label'].' — '.implode(' | ', $tooltipParts);
                         @endphp
                         <div
                             class="group flex min-w-[1.25rem] flex-1 flex-col items-center gap-1"
@@ -462,8 +504,14 @@
                             x-tooltip.raw="{{ $tooltipText }}"
                         >
                             <div class="fi-chart-track flex h-16 w-full flex-col justify-end overflow-hidden rounded-t transition-all group-hover:ring-1 group-hover:ring-primary-500/50">
-                                @if ($dayTotal > 0)
+                                @if ($dayWorking > 0)
                                     <div class="flex h-full w-full flex-col justify-end overflow-hidden rounded-t-xs">
+                                        @if ($dayOff > 0)
+                                            <div
+                                                class="fi-bar-off w-full transition-all"
+                                                style="height: {{ $dayOffPct }}%;"
+                                            ></div>
+                                        @endif
                                         @if ($day['absent'] > 0)
                                             <div
                                                 class="fi-bar-absent w-full transition-all"

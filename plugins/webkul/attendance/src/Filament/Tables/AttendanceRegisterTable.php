@@ -10,6 +10,7 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Webkul\Attendance\Filament\Clusters\Configurations\Resources\CalendarResource;
 use Webkul\Attendance\Filament\Pages\AttendanceOverview;
 use Webkul\Attendance\Services\AttendanceOverviewService;
 use Webkul\Employee\Filament\Resources\EmployeeResource;
@@ -51,6 +52,21 @@ class AttendanceRegisterTable
             ->state(fn (Employee $record): string => (string) ($grid[$record->getKey()]['calendar'] ?? ''))
             ->size(TextSize::Small)
             ->width('10rem')
+            ->url(function (Employee $record) use ($grid): ?string {
+                $calendarId = $grid[$record->getKey()]['calendar_id']
+                    ?? $record->calendar_id;
+
+                if (! $calendarId) {
+                    return null;
+                }
+
+                if (class_exists(CalendarResource::class)
+                    && (auth()->user()?->can('view_any_support_calendar') || auth()->user()?->can('view_support_calendar'))) {
+                    return CalendarResource::getUrl('index');
+                }
+
+                return null;
+            })
             ->toggleable()
             ->visibleFrom('md');
 
