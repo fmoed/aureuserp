@@ -22,6 +22,7 @@ class AttendanceServiceProvider extends PackageServiceProvider
     {
         $package->name(static::$name)
             ->hasTranslations()
+            ->hasViews()
             ->hasMigrations([
                 '2026_09_24_000001_create_attendance_attendances_table',
                 '2026_09_30_000001_add_source_label_to_attendance_attendances_table',
