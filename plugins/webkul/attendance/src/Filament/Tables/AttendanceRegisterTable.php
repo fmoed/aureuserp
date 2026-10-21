@@ -31,13 +31,17 @@ class AttendanceRegisterTable
             ->label(__('attendance::filament/pages/overview.table.columns.employee'))
             ->size(TextSize::Small)
             ->width('180px')
-            ->searchable();
+            ->searchable()
+            ->extraHeaderAttributes(['class' => 'fi-reg-sticky'])
+            ->extraCellAttributes(['class' => 'fi-reg-sticky']);
 
         $scheduleColumn = TextColumn::make('schedule')
             ->label(__('attendance::filament/pages/overview.table.columns.schedule'))
             ->state(fn (Employee $record): string => (string) ($grid[$record->getKey()]['calendar'] ?? ''))
             ->size(TextSize::Small)
-            ->toggleable();
+            ->width('10rem')
+            ->toggleable()
+            ->visibleFrom('md');
 
         if ($page->registerView === AttendanceOverview::REGISTER_TOTALS || $page->rangeMode === 'year') {
             // Totals sit next to the name; the long roster name goes last so
@@ -51,10 +55,15 @@ class AttendanceRegisterTable
             $columns[] = TextColumn::make('cells.'.$day)
                 ->label(Carbon::parse($day)->translatedFormat('D j'))
                 ->state(fn (Employee $record): string => (string) ($grid[$record->getKey()]['cells'][$day] ?? ''))
-                ->formatStateUsing(fn (mixed $state): string => self::statusLabel((string) $state))
+                ->formatStateUsing(fn (mixed $state): string => self::statusShortLabel((string) $state))
+                ->tooltip(fn (mixed $state): ?string => filled($state) && $state !== AttendanceOverviewService::STATUS_FUTURE
+                    ? self::statusLabel((string) $state)
+                    : null)
                 ->color(fn (mixed $state): ?string => self::statusColor((string) $state))
                 ->size(TextSize::Small)
                 ->alignCenter()
+                ->width('2.75rem')
+                ->extraHeaderAttributes(['style' => 'padding-inline: .25rem'])
                 ->placeholder('');
         }
 
@@ -138,6 +147,20 @@ class AttendanceRegisterTable
         }
 
         return __('attendance::filament/pages/overview.statuses.'.str_replace('_', '-', $status));
+    }
+
+    /**
+     * Compact one-glyph register cell code: a 31-column month stays on a
+     * single line, while the full localized word travels in the tooltip
+     * (day cells are the only consumer; totals cells keep full words).
+     */
+    public static function statusShortLabel(string $status): string
+    {
+        if ($status === '' || $status === AttendanceOverviewService::STATUS_FUTURE) {
+            return '';
+        }
+
+        return (string) __('attendance::filament/pages/overview.statuses.short.'.str_replace('_', '-', $status));
     }
 
     /**

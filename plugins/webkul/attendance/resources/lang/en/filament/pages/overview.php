@@ -44,6 +44,16 @@ return [
     ],
 
     'statuses' => [
+        'short' => [
+            'present'    => 'P',
+            'absent'     => 'A',
+            'on-leave'   => 'L',
+            'half-day'   => '½',
+            'pending'    => '?',
+            'holiday'    => 'H',
+            'weekly-off' => 'W',
+            'future'     => '',
+        ],
         'present'    => 'Present',
         'absent'     => 'Absent',
         'on-leave'   => 'On leave',
