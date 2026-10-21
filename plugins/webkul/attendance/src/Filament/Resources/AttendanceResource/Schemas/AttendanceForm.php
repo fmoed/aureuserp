@@ -79,6 +79,7 @@ class AttendanceForm
                     ->default(fn (Get $get): ?string => $get('employee_id') ? static::employeeToday($get('employee_id')) : null)
                     ->live()
                     ->disabledOn('edit')
+                    ->helperText(__('attendance::filament/resources/attendance.form.work-date-hint'))
                     ->rules(fn (Get $get, ?Model $record): array => [
                         function (string $attribute, mixed $value, \Closure $fail) use ($get, $record) {
                             if (! $value || ! $get('employee_id')) {
@@ -110,6 +111,9 @@ class AttendanceForm
                     ->required()
                     ->seconds()
                     ->live()
+                    ->helperText(fn (Get $get): string => __('attendance::filament/resources/attendance.form.clock-hint', [
+                        'zone' => static::employeeTimezone($get('employee_id')),
+                    ]))
                     ->rules(fn (Get $get): array => [
                         function (string $attribute, mixed $value, \Closure $fail) use ($get) {
                             if (! $value || ! $get('work_date')) {
@@ -125,6 +129,9 @@ class AttendanceForm
                     ->label(__('attendance::filament/resources/attendance.form.check-out'))
                     ->seconds()
                     ->live()
+                    ->helperText(fn (Get $get): string => __('attendance::filament/resources/attendance.form.clock-hint', [
+                        'zone' => static::employeeTimezone($get('employee_id')),
+                    ]))
                     ->rule('after_or_equal:check_in')
                     ->rules(fn (Get $get): array => [
                         function (string $attribute, mixed $value, \Closure $fail) use ($get) {

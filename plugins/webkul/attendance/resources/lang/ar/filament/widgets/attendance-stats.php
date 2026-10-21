@@ -1,7 +1,7 @@
 <?php
 
 return [
-    'heading' => 'حضور هذا الشهر',
+    'heading' => 'حضور هذا الشهر (غير مرتبط بفلتر الجدول)',
 
     'stats' => [
         'records'               => 'السجلات',
@@ -10,7 +10,7 @@ return [
         'employees-description' => 'موظفون مميزون حاضرون',
         'hours'                 => 'الساعات',
         'hours-description'     => 'إجمالي ساعات العمل',
-        'open'                  => 'أيام مفتوحة',
-        'open-description'      => 'بدون انصراف',
+        'open'                  => 'سجلات مفتوحة',
+        'open-description'      => 'سجلات بدون انصراف — تحتاج معالجة',
     ],
 ];

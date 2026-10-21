@@ -215,6 +215,42 @@ it('renders the create and edit attendance pages', function () {
     Livewire::test(EditAttendance::class, ['record' => $attendance->getRouteKey()])->assertOk();
 });
 
+it('paginates the attendances list at twenty-five rows with shared page sizes', function () {
+    FilamentHelper::actingAs(['view_any_attendance_attendance']);
+
+    $employee = Employee::factory()->create(['user_id' => User::factory()]);
+
+    foreach (range(1, 30) as $index) {
+        Attendance::create([
+            'employee_id' => $employee->id,
+            'work_date'   => sprintf('2099-09-%02d', $index),
+            'check_in'    => sprintf('2099-09-%02d 08:00:00', $index),
+            'source'      => 'manual',
+        ]);
+    }
+
+    $component = Livewire::test(ListAttendances::class);
+
+    $table = $component->instance()->getTable();
+
+    expect($table->getDefaultPaginationPageOption())->toBe(25)
+        ->and($table->getPaginationPageOptions())->toBe([10, 25, 50]);
+
+    $rows = Attendance::query()
+        ->where('employee_id', $employee->id)
+        ->orderByDesc('work_date')
+        ->get();
+
+    $pageName = $component->instance()->getTablePaginationPageName();
+
+    $component
+        ->assertCanSeeTableRecords($rows->take(25)->all())
+        ->assertCanNotSeeTableRecords($rows->skip(25)->all())
+        ->call('nextPage', $pageName)
+        ->assertCanSeeTableRecords($rows->skip(25)->all())
+        ->assertCanNotSeeTableRecords($rows->take(25)->all());
+});
+
 it('only allows completing open rows and fresh manual corrections', function () {
     $user = FilamentHelper::actingAs(['update_attendance_attendance']);
 

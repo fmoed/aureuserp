@@ -1,7 +1,7 @@
 <?php
 
 return [
-    'heading' => 'Présences ce mois-ci',
+    'heading' => 'Présences ce mois-ci (ignore les filtres)',
 
     'stats' => [
         'records'               => 'Relevés',

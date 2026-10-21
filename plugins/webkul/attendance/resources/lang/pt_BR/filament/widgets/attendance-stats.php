@@ -1,7 +1,7 @@
 <?php
 
 return [
-    'heading' => 'Presenças deste mês',
+    'heading' => 'Presenças deste mês (ignora os filtros)',
 
     'stats' => [
         'records'               => 'Registros',

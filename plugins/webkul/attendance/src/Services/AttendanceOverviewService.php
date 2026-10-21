@@ -20,13 +20,32 @@ use Webkul\TimeOff\Models\LeaveMandatoryDay;
  * holidays annotate the rest. Nothing is written here.
  *
  * Owner rules (locked): validate_two counts as on-leave; validate_one and
- * confirm are shown as pending (and count as absent); leave types with
- * no_validation count from confirm; holidays come only from manually
- * entered calendar leaves and mandatory days.
+ * confirm are shown as pending (and count as absent — decision D4, the
+ * HR role holder owns this through COUNT_PENDING_AS_ABSENT); leave types
+ * with no_validation count from confirm; holidays come only from manually
+ * entered calendar leaves and mandatory days. Report denominators follow
+ * the HR standard: expected workdays exclude public holidays and approved
+ * leave, so present + absent equals the manual absence-report figure.
  */
 class AttendanceOverviewService
 {
     public const MAX_RANGE_DAYS = 93;
+
+    /**
+     * Summary-shaped outputs (one row per employee: register totals, the
+     * absence-report export) may span a whole leap year. Their cost grows
+     * with rostered days, not with day columns, and they always run
+     * aggregated and queued — unlike the interactive day grid and the
+     * per-day detail export, which multiply rows by days.
+     */
+    public const MAX_SUMMARY_RANGE_DAYS = 366;
+
+    /**
+     * Pending (not yet approved) leave counts toward the absence numerator
+     * until the HR role holder flips this — unauthorized absence stays an
+     * absence until it is approved.
+     */
+    public const COUNT_PENDING_AS_ABSENT = true;
 
     public const STATUS_PRESENT = 'present';
 
@@ -39,6 +58,21 @@ class AttendanceOverviewService
     public const STATUS_HOLIDAY = 'holiday';
 
     /**
+     * Display-only register keys: a rostered-free day (weekend/day off)
+     * gets an explicit word, while a day beyond today maps to a blank
+     * cell (the uniform blank block reads as "not yet arrived"). Half
+     * days and pending leave get their own keys so the register can
+     * label them separately from full-day states.
+     */
+    public const STATUS_WEEKLY_OFF = 'weekly_off';
+
+    public const STATUS_FUTURE = 'future';
+
+    public const STATUS_HALF_DAY = 'half_day';
+
+    public const STATUS_PENDING = 'pending';
+
+    /**
      * Per-instance calendar fallback cache (company/global lookups repeat
      * for every calendar-less employee of the same company). Safe because
      * the service is resolved transiently per report run, never shared
@@ -47,6 +81,15 @@ class AttendanceOverviewService
      * @var array<string, ?Calendar>
      */
     private array $calendarCache = [];
+
+    /**
+     * Within-run memo for calendar attendance intervals. The batch engine
+     * only depends on calendar + timezone + range, so employees sharing a
+     * roster (the common case) hit one query instead of one each.
+     *
+     * @var array<string, list<array{0: Carbon, 1: Carbon}>>
+     */
+    private array $intervalCache = [];
 
     public static function rangeDays(string|Carbon $from, string|Carbon $to): int
     {
@@ -85,6 +128,210 @@ class AttendanceOverviewService
     }
 
     /**
+     * Attendance register rows: one row per employee with at least one
+     * rostered day in the display range, one cell per calendar day of
+     * that range. Every day up to today carries an explicit display
+     * status word (half days and pending leave surface as their own
+     * display keys, roster-free days are `weekly_off`); days beyond
+     * today render blank — the uniform blank block is self-evidently
+     * the not-yet-arrived part of the month. `totals` summarize only the
+     * part of the range up to today, so future days never inflate or
+     * deflate the absence figures.
+     *
+     * @param  Collection<int, Employee>  $employees
+     * @return Collection<int, array{employee_id: int, name: string, calendar: ?string, cells: array<string, string>, totals: array{employee_id: int, name: string, workdays: int, present: int, absent: int, on_leave: int, holidays: int, pending: int, minutes: int, absence_rate: float}}>
+     */
+    public function register(Collection $employees, Carbon $from, Carbon $to): Collection
+    {
+        if (method_exists($employees, 'loadMissing')) {
+            $employees->loadMissing('calendar');
+        }
+
+        $fromStr = $from->toDateString();
+        $toStr = $to->toDateString();
+        $today = Carbon::today();
+        $todayStr = $today->toDateString();
+
+        $entries = $from->gt($today)
+            ? collect()
+            : $this->daily($employees, $from, $to->gt($today) ? $today->copy() : $to);
+
+        $grouped = $entries->groupBy('employee_id');
+        $displayDates = $this->datesBetween($fromStr, $toStr, $fromStr, $toStr);
+
+        $rows = collect();
+
+        foreach ($employees as $employee) {
+            $workdays = $this->workdays($employee, $fromStr, $toStr);
+
+            if ($workdays === []) {
+                continue;
+            }
+
+            $employeeEntries = $grouped->get($employee->getKey(), collect());
+            $byDate = $employeeEntries->keyBy('date');
+
+            $cells = [];
+
+            foreach ($displayDates as $date) {
+                $cells[$date] = $date > $todayStr
+                    ? self::STATUS_FUTURE
+                    : $this->displayStatus($byDate->get($date));
+            }
+
+            $rows->push([
+                'employee_id' => $employee->getKey(),
+                'name'        => $employee->name,
+                'calendar'    => $this->calendarFor($employee)?->name,
+                'cells'       => $cells,
+                'totals'      => $this->summarize($employee, $employeeEntries),
+            ]);
+        }
+
+        return $rows->sortBy('name')->values();
+    }
+
+    /**
+     * Yearly register: one row per employee, one cell per elapsed month of
+     * the year (January through the current month for the running year —
+     * future months are omitted, never blank). Each month cell carries its
+     * present/absent/leave breakdown; `totals` carry the summed year.
+     *
+     * Kept light on purpose: every month is summarized through the same
+     * batched `summary()` used elsewhere (a few indexed queries per month,
+     * ~30 days of PHP each), then added up — neither the queries nor the
+     * PHP working set ever span the whole year at once.
+     *
+     * @param  Collection<int, Employee>  $employees
+     * @return Collection<int, array{employee_id: int, name: string, calendar: ?string, cells: array<string, array{present: int, absent: int, on_leave: int}>, totals: array{employee_id: int, name: string, workdays: int, present: int, absent: int, on_leave: int, holidays: int, pending: int, minutes: int, absence_rate: float}}>
+     */
+    public function registerYearly(Collection $employees, int $year): Collection
+    {
+        if (method_exists($employees, 'loadMissing')) {
+            $employees->loadMissing('calendar');
+        }
+
+        $today = Carbon::today();
+        $lastMonth = $year === $today->year ? $today->month : 12;
+
+        $january = sprintf('%04d-01-01', $year);
+        $december = sprintf('%04d-12-31', $year);
+
+        $scoped = $employees->filter(fn (Employee $employee): bool => $this->workdays($employee, $january, $december) !== []);
+
+        $cellsByEmployee = [];
+        $totalsByEmployee = [];
+
+        foreach ($scoped as $employee) {
+            $cellsByEmployee[$employee->getKey()] = [];
+
+            $totalsByEmployee[$employee->getKey()] = [
+                'employee_id'  => $employee->getKey(),
+                'name'         => $employee->name,
+                'workdays'     => 0,
+                'present'      => 0,
+                'absent'       => 0,
+                'on_leave'     => 0,
+                'holidays'     => 0,
+                'pending'      => 0,
+                'minutes'      => 0,
+                'absence_rate' => 0.0,
+            ];
+        }
+
+        for ($month = 1; $month <= $lastMonth; $month++) {
+            $from = Carbon::create($year, $month, 1);
+            $to = $from->copy()->endOfMonth();
+
+            if ($year === $today->year && $month === $today->month) {
+                $to = $today->copy();
+            }
+
+            $monthly = $this->summary($scoped, $from, $to)->keyBy('employee_id');
+
+            foreach ($scoped as $employee) {
+                $row = $monthly->get($employee->getKey());
+
+                if ($row === null) {
+                    continue;
+                }
+
+                $cellsByEmployee[$employee->getKey()][$from->toDateString()] = [
+                    'present'  => $row['present'],
+                    'absent'   => $row['absent'],
+                    'on_leave' => $row['on_leave'],
+                ];
+
+                foreach (['workdays', 'present', 'absent', 'on_leave', 'holidays', 'pending', 'minutes'] as $field) {
+                    $totalsByEmployee[$employee->getKey()][$field] += $row[$field];
+                }
+            }
+        }
+
+        $rows = collect();
+
+        foreach ($scoped as $employee) {
+            $totals = $totalsByEmployee[$employee->getKey()];
+            $totals['absence_rate'] = $totals['workdays'] === 0 ? 0.0 : round($totals['absent'] / $totals['workdays'] * 100, 1);
+
+            $rows->push([
+                'employee_id' => $employee->getKey(),
+                'name'        => $employee->name,
+                'calendar'    => $this->calendarFor($employee)?->name,
+                'cells'       => $cellsByEmployee[$employee->getKey()],
+                'totals'      => $totals,
+            ]);
+        }
+
+        return $rows->sortBy('name')->values();
+    }
+
+    /**
+     * Display key for a single register cell: an approved half day and a
+     * pending (not yet approved) leave each get their own word, and a day
+     * without a classified entry is a weekly off day rather than a blank.
+     */
+    protected function displayStatus(?array $entry): string
+    {
+        if ($entry === null) {
+            return self::STATUS_WEEKLY_OFF;
+        }
+
+        if ($entry['status'] === self::STATUS_ON_LEAVE && $entry['half_day']) {
+            return self::STATUS_HALF_DAY;
+        }
+
+        if ($entry['status'] === self::STATUS_ON_LEAVE_PENDING) {
+            return self::STATUS_PENDING;
+        }
+
+        return $entry['status'];
+    }
+
+    /**
+     * Expected workdays for the detail export: `daily()` produces one row
+     * per employee and workday, so the row count is the sum of workdays
+     * without materializing any entry.
+     */
+    public function countDaily(Collection $employees, Carbon $from, Carbon $to): int
+    {
+        if (method_exists($employees, 'loadMissing')) {
+            $employees->loadMissing('calendar');
+        }
+
+        $fromStr = $from->toDateString();
+        $toStr = $to->toDateString();
+
+        $total = 0;
+
+        foreach ($employees as $employee) {
+            $total += count($this->workdays($employee, $fromStr, $toStr));
+        }
+
+        return $total;
+    }
+
+    /**
      * @return Collection<int, array{employee_id: int, name: string, workdays: int, present: int, absent: int, on_leave: int, holidays: int, pending: int, minutes: int, absence_rate: float}>
      */
     public function summary(Collection $employees, Carbon $from, Carbon $to): Collection
@@ -107,23 +354,36 @@ class AttendanceOverviewService
     }
 
     /**
+     * HR-standard counts: `workdays` is the expected denominator (calendar
+     * workdays minus public holidays minus approved leave), so
+     * present + absent mirrors the manual absence report, and the rate is
+     * absent ÷ expected. Pending leave stays in the denominator (not yet
+     * approved) and joins the numerator when COUNT_PENDING_AS_ABSENT.
+     *
      * @param  Collection<int, array{employee_id: int, name: string, date: string, status: string, leave_label: ?string, half_day: bool, check_in: ?string, check_out: ?string, minutes: ?int}>  $entries
      * @return array{employee_id: int, name: string, workdays: int, present: int, absent: int, on_leave: int, holidays: int, pending: int, minutes: int, absence_rate: float}
      */
     protected function summarize(Employee $employee, Collection $entries): array
     {
-        $workdays = $entries->count();
-        $absent = $entries->whereIn('status', [self::STATUS_ABSENT, self::STATUS_ON_LEAVE_PENDING])->count();
+        $present = $entries->where('status', self::STATUS_PRESENT)->count();
+        $onLeave = $entries->where('status', self::STATUS_ON_LEAVE)->count();
+        $holidays = $entries->where('status', self::STATUS_HOLIDAY)->count();
+        $pending = $entries->where('status', self::STATUS_ON_LEAVE_PENDING)->count();
+
+        $absent = $entries->where('status', self::STATUS_ABSENT)->count()
+            + (self::COUNT_PENDING_AS_ABSENT ? $pending : 0);
+
+        $workdays = max(0, $entries->count() - $holidays - $onLeave);
 
         return [
             'employee_id'  => $employee->getKey(),
             'name'         => $employee->name,
             'workdays'     => $workdays,
-            'present'      => $entries->where('status', self::STATUS_PRESENT)->count(),
+            'present'      => $present,
             'absent'       => $absent,
-            'on_leave'     => $entries->where('status', self::STATUS_ON_LEAVE)->count(),
-            'holidays'     => $entries->where('status', self::STATUS_HOLIDAY)->count(),
-            'pending'      => $entries->where('status', self::STATUS_ON_LEAVE_PENDING)->count(),
+            'on_leave'     => $onLeave,
+            'holidays'     => $holidays,
+            'pending'      => $pending,
             'minutes'      => $entries->sum(fn (array $entry): int => $entry['minutes'] ?? 0),
             'absence_rate' => $workdays === 0 ? 0.0 : round($absent / $workdays * 100, 1),
         ];
@@ -142,11 +402,17 @@ class AttendanceOverviewService
 
         $timezone = $employee->time_zone ?: config('app.timezone');
 
-        $intervals = collect($calendar->getAttendanceIntervalsBatch(
-            Carbon::parse($from.' 00:00:00', 'UTC'),
-            Carbon::parse($to.' 23:59:59', 'UTC'),
-            timezone: $timezone,
-        ))->first() ?? [];
+        $key = $calendar->id.'|'.$timezone.'|'.$from.'|'.$to;
+
+        if (! array_key_exists($key, $this->intervalCache)) {
+            $this->intervalCache[$key] = collect($calendar->getAttendanceIntervalsBatch(
+                Carbon::parse($from.' 00:00:00', 'UTC'),
+                Carbon::parse($to.' 23:59:59', 'UTC'),
+                timezone: $timezone,
+            ))->first() ?? [];
+        }
+
+        $intervals = $this->intervalCache[$key];
 
         return collect($intervals)
             ->map(fn (array $interval): string => $interval[0]->copy()->setTimezone($timezone)->toDateString())
@@ -240,6 +506,12 @@ class AttendanceOverviewService
     }
 
     /**
+     * Holidays are employee-facing public holidays only: `time_type = 'leave'`
+     * (what the public-holiday form writes) and no bound resource, mirroring
+     * `Calendar::getLeaveIntervalsBatch()`. Resource-bound or `other` rows —
+     * e.g. manufacturing work-order downtime — are calendar capacity, not
+     * days off for everyone.
+     *
      * @return Collection<string, string> date (Y-m-d) => holiday label.
      */
     protected function holidaysByDate(Collection $employees, string $from, string $to): Collection
@@ -248,6 +520,8 @@ class AttendanceOverviewService
         $companyIds = $employees->pluck('company_id')->filter()->unique()->values()->all();
 
         $public = CalendarLeave::query()
+            ->where('time_type', 'leave')
+            ->whereNull('resource_id')
             ->whereDate('date_to', '>=', $from)
             ->whereDate('date_from', '<=', $to)
             ->where(fn ($query) => $query->whereNull('calendar_id')->orWhereIn('calendar_id', $calendarIds))

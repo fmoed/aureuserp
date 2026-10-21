@@ -183,6 +183,41 @@ it('filters events by punch date range', function () {
         ->assertCanNotSeeTableRecords([$outside]);
 });
 
+it('rejects punch date ranges wider than ninety-three days', function () {
+    FilamentHelper::actingAs(['view_any_attendance_attendance::event']);
+
+    $employee = Employee::factory()->create(['user_id' => User::factory()]);
+
+    $inside = EventGateway::push($employee->id, '2026-09-10 08:00:00', 0, 'biometric-attendance:3', 'evt-wide-1');
+    $alsoInRange = EventGateway::push($employee->id, '2026-05-01 08:00:00', 0, 'biometric-attendance:3', 'evt-wide-2');
+
+    Livewire::test(ListAttendanceEvents::class)
+        ->filterTable('punched_at', ['punched_from' => '2026-01-01', 'punched_to' => '2026-12-31'])
+        ->assertHasErrors([
+            'tableFilters.punched_at.punched_to' => 'The range must not exceed 93 days.',
+        ])
+        ->assertCanSeeTableRecords([$inside, $alsoInRange])
+        ->filterTable('punched_at', ['punched_from' => '2026-05-01', 'punched_to' => '2026-07-31'])
+        ->assertHasNoErrors()
+        ->assertCanSeeTableRecords([$alsoInRange])
+        ->assertCanNotSeeTableRecords([$inside]);
+});
+
+it('applies a punch date range of exactly ninety-three days', function () {
+    FilamentHelper::actingAs(['view_any_attendance_attendance::event']);
+
+    $employee = Employee::factory()->create(['user_id' => User::factory()]);
+
+    $inside = EventGateway::push($employee->id, '2026-09-10 08:00:00', 0, 'biometric-attendance:3', 'evt-edge-in');
+    $outside = EventGateway::push($employee->id, '2026-01-05 08:00:00', 0, 'biometric-attendance:3', 'evt-edge-out');
+
+    Livewire::test(ListAttendanceEvents::class)
+        ->filterTable('punched_at', ['punched_from' => '2026-09-10', 'punched_to' => '2026-12-12'])
+        ->assertHasNoErrors()
+        ->assertCanSeeTableRecords([$inside])
+        ->assertCanNotSeeTableRecords([$outside]);
+});
+
 it('paginates the events list at twenty-five rows by default', function () {
     FilamentHelper::actingAs(['view_any_attendance_attendance::event']);
 

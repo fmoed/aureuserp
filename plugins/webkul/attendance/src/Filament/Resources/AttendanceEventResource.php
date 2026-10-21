@@ -16,6 +16,8 @@ class AttendanceEventResource extends Resource
 
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-queue-list';
 
+    protected static ?int $navigationSort = 3;
+
     public static function getModelLabel(): string
     {
         return __('attendance::filament/resources/attendance-event.title');

@@ -13,7 +13,8 @@ return [
             'punched-at'  => 'Hora de marcación',
             'direction'   => 'Dirección',
             'source'      => 'Fuente',
-            'linked-row'  => 'Fila vinculada',
+            'linked-row'  => 'Registro vinculado',
+            'linked-hint' => 'Vacío significa pendiente de vinculación. Corrija en Asistencias.',
         ],
 
         'directions' => [
@@ -23,11 +24,12 @@ return [
         ],
 
         'filters' => [
-            'employee'   => 'Empleado',
-            'source'     => 'Fuente',
-            'punched-at' => 'Fecha de marcación',
-            'date-from'  => 'Desde',
-            'date-to'    => 'Hasta',
+            'employee'       => 'Empleado',
+            'source'         => 'Fuente',
+            'punched-at'     => 'Fecha de marcación',
+            'date-from'      => 'Desde',
+            'date-to'        => 'Hasta',
+            'range-too-wide' => 'El rango no debe superar :days días.',
         ],
 
         'toolbar-actions' => [
