@@ -6,7 +6,11 @@ return [
         'workdays'     => 'Dias úteis totais',
         'present'      => 'Dias presentes',
         'absent'       => 'Dias ausentes',
-        'absence-rate' => 'Ausência %',
+        'absence-rate' => 'Taxa de ausências',
+        'on-leave'     => 'Dias de licença',
+        'holidays'     => 'Feriados',
+        'pending'      => 'Licenças pendentes',
+        'minutes'      => 'Minutos trabalhados',
     ],
 
     'options' => [

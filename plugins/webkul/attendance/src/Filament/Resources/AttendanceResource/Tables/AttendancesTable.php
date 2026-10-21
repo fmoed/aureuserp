@@ -44,6 +44,8 @@ class AttendancesTable
     {
         return $table
             ->defaultSort('work_date', 'desc')
+            ->defaultPaginationPageOption(25)
+            ->paginated([10, 25, 50])
             ->modifyQueryUsing(fn ($query) => $query->with('employee'))
             ->columns([
                 TextColumn::make('employee.name')
@@ -58,12 +60,18 @@ class AttendancesTable
                     ->label(__('attendance::filament/resources/attendance.table.columns.check-in'))
                     ->state(fn (Attendance $record) => static::employeeWallClock($record, 'check_in'))
                     ->dateTime()
-                    ->sortable(),
+                    ->sortable()
+                    ->tooltip(fn (Attendance $record): string => __('attendance::filament/resources/attendance.table.filters.timezone-tip', [
+                        'zone' => $record->employee?->time_zone ?: config('app.timezone'),
+                    ])),
                 TextColumn::make('check_out')
                     ->label(__('attendance::filament/resources/attendance.table.columns.check-out'))
                     ->state(fn (Attendance $record) => static::employeeWallClock($record, 'check_out'))
                     ->dateTime()
                     ->sortable()
+                    ->tooltip(fn (Attendance $record): string => __('attendance::filament/resources/attendance.table.filters.timezone-tip', [
+                        'zone' => $record->employee?->time_zone ?: config('app.timezone'),
+                    ]))
                     ->placeholder('—'),
                 TextColumn::make('worked_minutes')
                     ->label(__('attendance::filament/resources/attendance.table.columns.worked'))
@@ -108,6 +116,7 @@ class AttendancesTable
                                 'this_week'  => __('attendance::filament/resources/attendance.table.filters.preset-this-week'),
                                 'this_month' => __('attendance::filament/resources/attendance.table.filters.preset-this-month'),
                             ])
+                            ->helperText(__('attendance::filament/resources/attendance.table.filters.preset-hint'))
                             ->live(),
                         DatePicker::make('work_date_from')
                             ->label(__('attendance::filament/resources/attendance.table.filters.date-from')),
@@ -135,6 +144,7 @@ class AttendancesTable
                     ->label(__('attendance::filament/resources/attendance.table.record-actions.add-checkout'))
                     ->icon('heroicon-o-arrow-right-end-on-rectangle')
                     ->color('success')
+                    ->modalDescription(__('attendance::filament/resources/attendance.form.checkout-hint'))
                     ->visible(fn (Attendance $record): bool => $record->check_out === null && auth()->user()?->can('update', $record))
                     ->form([
                         DateTimePicker::make('check_out')
