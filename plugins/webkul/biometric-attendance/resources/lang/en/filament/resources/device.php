@@ -30,6 +30,7 @@ return [
             'protocol'   => 'Protocol',
             'active'     => 'Active',
             'last-sync'  => 'Last Sync',
+            'last-error' => 'Last error',
             'created-at' => 'Created At',
         ],
 
