@@ -5,59 +5,59 @@
         $trend = $this->rangeMode !== 'year' ? $this->getDailyTrend() : [];
 
         $valueColor = fn (string $color): string => match ($color) {
-            'success' => 'text-emerald-600 dark:text-emerald-400',
-            'danger'  => 'text-rose-600 dark:text-rose-400',
-            'info'    => 'text-sky-600 dark:text-sky-400',
-            'warning' => 'text-amber-600 dark:text-amber-400',
-            'primary' => 'text-indigo-600 dark:text-indigo-400',
+            'success' => 'text-success-600 dark:text-success-400',
+            'danger'  => 'text-danger-600 dark:text-danger-400',
+            'info'    => 'text-info-600 dark:text-info-400',
+            'warning' => 'text-warning-600 dark:text-warning-400',
+            'primary' => 'text-primary-600 dark:text-primary-400',
             default   => 'text-gray-900 dark:text-white',
         };
     @endphp
 
-    {{-- شريط ملخص مضغوط في سطر واحد: الأرقام الأساسية (الموظفون/الحضور/الغياب/النسبة)
-        ظاهرة دائماً، والثانوية (إجازة/معلق/عطلات) تظهر من sm فأعلى، ودليل
-        الحالات من md فأعلى — بدل سبع بطاقات تأكل رأس الصفحة خاصة على الهاتف. --}}
-    <div class="rounded-xl border border-gray-200/80 bg-white px-4 py-2.5 dark:border-white/10 dark:bg-gray-900">
-        <div class="flex flex-wrap items-center gap-x-5 gap-y-1.5">
-            @foreach ($summary as $item)
+    {{-- شريط ملخص مضغوط: الأرقام الأساسية الأربعة فقط (الموظفون/الحضور/الغياب/النسبة)
+        والقيم الثانوية متاحة في وضع الملخص والتصدير — الرقم بارز ملون
+        والتسمية صغيرة خلفه، بدل سبع بطاقات/سبع فقرات نصية تستهلك الرأس. --}}
+    <div class="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-gray-200/80 bg-white px-4 py-2 dark:border-white/10 dark:bg-gray-900">
+        @foreach ($summary as $item)
+            @if (in_array($item['key'], ['employees', 'present', 'absent', 'rate'], true))
                 @php
-                    $isSecondary = in_array($item['key'], ['on_leave', 'pending', 'holidays'], true);
                     $isRate = $item['key'] === 'rate';
                     $valueDisplay = $isRate ? $item['value'].'%' : number_format($item['value']);
                 @endphp
                 <span
-                    class="flex items-baseline gap-1.5 whitespace-nowrap {{ $isSecondary ? 'hidden sm:inline-flex' : '' }}"
+                    class="flex items-baseline gap-1 whitespace-nowrap"
                     title="{{ $item['label'] }}: {{ $valueDisplay }}"
                 >
-                    <span class="text-xs font-medium text-gray-500 dark:text-gray-400">
-                        {{ $item['label'] }}
-                    </span>
-                    <span class="text-base font-bold {{ $valueColor($item['color'] ?? 'gray') }}">
+                    <span class="text-sm font-bold {{ $valueColor($item['color'] ?? 'gray') }}">
                         {{ $valueDisplay }}
                     </span>
-                </span>
-            @endforeach
-
-            @if ($this->rangeMode !== 'year')
-                <span class="ms-auto hidden flex-wrap items-center gap-1.5 md:flex">
-                    <span class="text-xs font-semibold text-gray-700 dark:text-gray-200">
-                        {{ __('attendance::filament/pages/overview.grid.legend') }}:
+                    <span class="text-[11px] font-medium text-gray-500 dark:text-gray-400">
+                        {{ $item['label'] }}
                     </span>
-                    @foreach ($legend as $status)
-                        @if ($status['key'] !== \Webkul\Attendance\Services\AttendanceOverviewService::STATUS_FUTURE && ! empty($status['label']))
-                            <x-filament::badge :color="$status['color']" size="sm">
-                                {{ $status['label'] }}
-                            </x-filament::badge>
-                        @endif
-                    @endforeach
                 </span>
             @endif
-        </div>
+        @endforeach
 
-        <div class="mt-1.5 flex items-center gap-1.5 border-t border-gray-100 pt-1.5 text-xs text-gray-500 dark:border-white/5 dark:text-gray-400">
-            <x-filament::icon icon="heroicon-m-information-circle" class="h-4 w-4 shrink-0 text-amber-500" />
-            <span>{{ __('attendance::filament/pages/overview.grid.pending-note') }}</span>
-        </div>
+        @if ($this->rangeMode !== 'year')
+            <span class="ms-auto hidden flex-wrap items-center gap-1.5 md:flex">
+                <span class="text-xs font-semibold text-gray-700 dark:text-gray-200">
+                    {{ __('attendance::filament/pages/overview.grid.legend') }}:
+                </span>
+                @foreach ($legend as $status)
+                    @if ($status['key'] !== \Webkul\Attendance\Services\AttendanceOverviewService::STATUS_FUTURE && ! empty($status['label']))
+                        <x-filament::badge :color="$status['color']" size="sm">
+                            {{ $status['label'] }}
+                        </x-filament::badge>
+                    @endif
+                @endforeach
+            </span>
+        @endif
+    </div>
+
+    {{-- ملاحظة الإجازة المعلقة: سطر خفيف بلا حدود تحت الشريط --}}
+    <div class="flex items-center gap-1.5 px-1 text-[11px] text-gray-500 dark:text-gray-400">
+        <x-filament::icon icon="heroicon-m-information-circle" class="h-3.5 w-3.5 shrink-0 text-warning-500" />
+        <span>{{ __('attendance::filament/pages/overview.grid.pending-note') }}</span>
     </div>
 
     {{-- الرسم اليومي: بيانات موجودة أصلاً في الصفحة (getDailyTrend)، مطوي
@@ -79,9 +79,9 @@
                             {{ __('attendance::filament/pages/overview.grid.totals.absent') }}: {{ $day['absent'] }},
                             {{ __('attendance::filament/pages/overview.grid.totals.on-leave') }}: {{ $day['leave'] }}"
                     >
-                        <div class="rounded-t bg-rose-500" style="flex: {{ $day['absent'] }} 0 0"></div>
-                        <div class="rounded-t bg-sky-500" style="flex: {{ $day['leave'] }} 0 0"></div>
-                        <div class="rounded-t bg-emerald-500" style="flex: {{ $day['present'] }} 0 0"></div>
+                        <div class="rounded-t bg-danger-500" style="flex: {{ $day['absent'] }} 0 0"></div>
+                        <div class="rounded-t bg-info-500" style="flex: {{ $day['leave'] }} 0 0"></div>
+                        <div class="rounded-t bg-success-500" style="flex: {{ $day['present'] }} 0 0"></div>
                     </div>
                 @endforeach
             </div>
@@ -147,7 +147,7 @@
                     <button
                         type="button"
                         wire:click="clearEmployee"
-                        class="-me-1 rounded-full p-0.5 text-gray-400 transition hover:bg-rose-100 hover:text-rose-600 dark:hover:bg-rose-500/20"
+                        class="-me-1 rounded-full p-0.5 text-gray-400 transition hover:bg-danger-100 hover:text-danger-600 dark:hover:bg-danger-500/20"
                         title="{{ __('attendance::filament/pages/overview.filter-chips.clear') }}"
                     >
                         <x-filament::icon icon="heroicon-m-x-mark" class="h-3.5 w-3.5" />
@@ -164,6 +164,10 @@
     <style>
         .attendance-register-table .fi-ta-table {
             table-layout: fixed;
+            /* WebKit (iOS Safari) لا يرسم خلفية الخلايا اللاصقة مع border-collapse:
+               collapse فتظهر أسماء الأعمدة من خلال عمود الموظف أثناء التمرير —
+               separate مع فواصل الصفوف القائمة على divide يرسم الخلفية صحيحاً */
+            border-collapse: separate;
         }
 
         .attendance-register-table .fi-reg-sticky {

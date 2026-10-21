@@ -583,11 +583,21 @@ it('compresses the page header into one summary strip with the daily trend chart
 
         $html = $component->html();
 
-        // الشريط المضغوط بدل شبكة البطاقات السبع ذات الأنماط المضمنة
+        // الشريط المضغوط: أربعة أرقام أساسية فقط بدل شبكة البطاقات السبع
         expect($html)
             ->not->toContain('style="display: grid"')
             ->not->toContain('h-11 w-11')
-            ->toContain('attendance-daily-trend');
+            ->toContain('attendance-daily-trend')
+            ->toContain('border-collapse: separate');
+
+        // أربعة أرقام أساسية فقط في الشريط (الثانوية في وضع الملخص والتصدير)،
+        // مع بقاء تسميات القيم الأساسية نفسها
+        expect(substr_count($html, 'items-baseline gap-1 whitespace-nowrap'))->toBe(4);
+
+        $component
+            ->assertSee('Present days')
+            ->assertSee('Absent days')
+            ->assertSee('Absence rate');
 
         // عنوان الرسم يأتي من مفتاح الترجمة الموجود أصلاً
         $component->assertSee(__('attendance::filament/pages/overview.grid.chart'));

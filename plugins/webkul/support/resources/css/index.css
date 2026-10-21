@@ -4,6 +4,10 @@
 
 @variant dark (&:where(.dark, .dark *));
 
-@source '../../../../app/Filament';
-@source '../../resources/views';
+/* Ammas the admin panel's own Tailwind build: scanning from the repo root
+   (gitignore respected) so every webkul plugin's blade views contribute
+   classes. Previously only the support plugin's views were scanned, so
+   custom utilities in other plugins (attendance register strip, trend
+   chart bars, tints) silently never compiled. */
+@source '../../../../../';
 @source '../../../../../vendor/guava/filament-icon-picker/resources/views';

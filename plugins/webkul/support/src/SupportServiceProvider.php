@@ -3,7 +3,6 @@
 namespace Webkul\Support;
 
 use Filament\Panel;
-use Filament\Support\Assets\Css;
 use Filament\Support\Facades\FilamentAsset;
 use Filament\Support\Facades\FilamentView;
 use Filament\View\PanelsRenderHook;
@@ -17,6 +16,7 @@ use Webkul\PluginManager\PackageServiceProvider;
 use Webkul\Security\Livewire\AcceptInvitation;
 use Webkul\Security\Models\Role;
 use Webkul\Security\Policies\RolePolicy;
+use Webkul\Support\Assets\SupportCss;
 use Webkul\Support\Database\Dialects\DatabaseDialect;
 use Webkul\Support\Database\Dialects\MySqlDialect;
 use Webkul\Support\Database\Dialects\PostgresDialect;
@@ -133,7 +133,7 @@ class SupportServiceProvider extends PackageServiceProvider
         ])->where(['filename' => '[ \w\\.\\/\\-\\@\(\)\=]+']);
 
         FilamentAsset::register([
-            Css::make('support', __DIR__.'/../resources/dist/support.css'),
+            SupportCss::make('support', __DIR__.'/../resources/dist/support.css'),
         ], 'support');
 
         $this->registerFilamentDefaults();
