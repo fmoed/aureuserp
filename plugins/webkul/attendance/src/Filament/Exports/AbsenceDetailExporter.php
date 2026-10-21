@@ -43,14 +43,20 @@ class AbsenceDetailExporter extends Exporter
         return [
             ExportColumn::make('employee')
                 ->label(__('attendance::filament/exports/absence-detail.columns.employee')),
-            ExportColumn::make('date')
-                ->label(__('attendance::filament/exports/absence-detail.columns.date')),
-            ExportColumn::make('day')
-                ->label(__('attendance::filament/exports/absence-detail.columns.day')),
-            ExportColumn::make('status')
-                ->label(__('attendance::filament/exports/absence-detail.columns.status')),
-            ExportColumn::make('minutes')
-                ->label(__('attendance::filament/exports/absence-detail.columns.minutes')),
+            ExportColumn::make('schedule')
+                ->label(__('attendance::filament/exports/absence-detail.columns.schedule')),
+            ExportColumn::make('workdays')
+                ->label(__('attendance::filament/exports/absence-detail.columns.workdays')),
+            ExportColumn::make('present')
+                ->label(__('attendance::filament/exports/absence-detail.columns.present')),
+            ExportColumn::make('absent')
+                ->label(__('attendance::filament/exports/absence-detail.columns.absent')),
+            ExportColumn::make('on_leave')
+                ->label(__('attendance::filament/exports/absence-detail.columns.on-leave')),
+            ExportColumn::make('hours')
+                ->label(__('attendance::filament/exports/absence-detail.columns.hours')),
+            ExportColumn::make('absence_rate')
+                ->label(__('attendance::filament/exports/absence-detail.columns.absence-rate')),
         ];
     }
 

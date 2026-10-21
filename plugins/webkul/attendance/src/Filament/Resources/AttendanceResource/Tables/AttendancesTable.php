@@ -14,6 +14,7 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
@@ -23,6 +24,8 @@ use Webkul\Employee\Filament\Resources\EmployeeResource;
 
 class AttendancesTable
 {
+    public const EXPORT_MAX_ROWS = 10000;
+
     /**
      * Stored values are naive UTC strings; always read the raw attribute so
      * the app timezone never leaks in (Carbon::parse(Carbon, 'UTC') would
@@ -197,7 +200,9 @@ class AttendancesTable
                 ExportAction::make()
                     ->label(__('attendance::filament/resources/attendance.table.toolbar-actions.export'))
                     ->icon('heroicon-o-arrow-up-tray')
-                    ->exporter(AttendanceExporter::class),
+                    ->exporter(AttendanceExporter::class)
+                    ->maxRows(self::EXPORT_MAX_ROWS)
+                    ->modifyQueryUsing(fn (Builder $query, array $options): Builder => AttendanceExporter::scopeQuery($query, $options)),
             ]);
     }
 }

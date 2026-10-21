@@ -5,13 +5,39 @@ namespace Webkul\Attendance\Filament\Exports;
 use Filament\Actions\Exports\ExportColumn;
 use Filament\Actions\Exports\Exporter;
 use Filament\Actions\Exports\Models\Export;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
+use Webkul\Attendance\Filament\Exports\Concerns\HasAbsenceExportOptions;
 use Webkul\Attendance\Filament\Resources\AttendanceResource\Tables\AttendancesTable;
 use Webkul\Attendance\Models\Attendance;
 
 class AttendanceExporter extends Exporter
 {
+    use HasAbsenceExportOptions;
+
     protected static ?string $model = Attendance::class;
+
+    protected static function exportFilePrefix(): string
+    {
+        return 'attendances';
+    }
+
+    public static function scopeQuery(Builder $query, array $options): Builder
+    {
+        return $query
+            ->when(
+                $options['employee_id'] ?? null,
+                fn (Builder $query, mixed $employeeId) => $query->where('employee_id', $employeeId)
+            )
+            ->when(
+                $options['date_from'] ?? null,
+                fn (Builder $query, mixed $dateFrom) => $query->whereDate('work_date', '>=', $dateFrom)
+            )
+            ->when(
+                $options['date_to'] ?? null,
+                fn (Builder $query, mixed $dateTo) => $query->whereDate('work_date', '<=', $dateTo)
+            );
+    }
 
     public static function getColumns(): array
     {

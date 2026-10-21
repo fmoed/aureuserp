@@ -13,11 +13,10 @@ use Webkul\Attendance\Filament\Exports\AbsenceDetailExporter;
 use Webkul\Attendance\Services\AttendanceOverviewService;
 
 /**
- * Fan-out prepare for the daily register export. Filament's exporter
- * contract yields one row per record, but this export needs one row per
- * employee and workday — so the prepare job recounts the export as rows
- * (progress and clamping depend on it), then dispatches one CSV job per
- * chunk of employees, each writing its own fan-out file.
+ * Prepares the daily attendance matrix export: writes the CSV headers
+ * (fixed overview columns followed by a column for each calendar day in
+ * the selected range), counts eligible employees (one row per employee),
+ * and dispatches chunked CSV jobs.
  */
 class PrepareAbsenceDetailExport extends PrepareCsvExport
 {
@@ -27,10 +26,34 @@ class PrepareAbsenceDetailExport extends PrepareCsvExport
             return;
         }
 
+        $locale = $this->options['locale'] ?? app()->getLocale();
+        app()->setLocale($locale);
+        Carbon::setLocale($locale);
+
+        $from = Carbon::parse($this->options['date_from']);
+        $to = Carbon::parse($this->options['date_to']);
+
+        $headers = [
+            __('attendance::filament/exports/absence-detail.columns.employee'),
+            __('attendance::filament/exports/absence-detail.columns.schedule'),
+            __('attendance::filament/exports/absence-detail.columns.workdays'),
+            __('attendance::filament/exports/absence-detail.columns.present'),
+            __('attendance::filament/exports/absence-detail.columns.absent'),
+            __('attendance::filament/exports/absence-detail.columns.on-leave'),
+            __('attendance::filament/exports/absence-detail.columns.hours'),
+            __('attendance::filament/exports/absence-detail.columns.absence-rate'),
+        ];
+
+        $cursor = $from->copy();
+        while ($cursor->lte($to)) {
+            $headers[] = $cursor->locale($locale)->translatedFormat('Y-m-d (D)');
+            $cursor->addDay();
+        }
+
         $csv = Writer::from(new SplTempFileObject);
         $csv->setOutputBOM(Bom::Utf8);
         $csv->setDelimiter($this->exporter::getCsvDelimiter());
-        $csv->insertOne(array_values($this->columnMap));
+        $csv->insertOne($headers);
 
         $filePath = $this->export->getFileDirectory().DIRECTORY_SEPARATOR.'headers.csv';
         $this->export->getFileDisk()->put($filePath, $csv->toString(), Filesystem::VISIBILITY_PRIVATE);
@@ -38,16 +61,13 @@ class PrepareAbsenceDetailExport extends PrepareCsvExport
         $query = EloquentSerializeFacade::unserialize($this->query);
         $employees = $query->get();
 
-        $rowCount = app(AttendanceOverviewService::class)->countDaily(
-            $employees,
-            Carbon::parse($this->options['date_from']),
-            Carbon::parse($this->options['date_to']),
-        );
+        $matrix = app(AttendanceOverviewService::class)->register($employees, $from, $to);
+        $employeeIds = $matrix->pluck('employee_id')->all();
+        $rowCount = count($employeeIds);
 
         // We do not want to send the loaded user relationship to the queue in job payloads.
         $this->export->unsetRelation('user');
 
-        // The action counted employees; the file holds employee × workday rows.
         $this->export->forceFill(['total_rows' => $rowCount])->save();
 
         if ($rowCount === 0 || $rowCount > AbsenceDetailExporter::maxRows()) {
@@ -57,7 +77,7 @@ class PrepareAbsenceDetailExport extends PrepareCsvExport
         $jobs = [];
         $page = 0;
 
-        foreach (array_chunk($employees->pluck('id')->all(), $this->chunkSize) as $records) {
+        foreach (array_chunk($employeeIds, $this->chunkSize) as $records) {
             $page++;
 
             $jobs[] = app($this->getExportCsvJob(), [

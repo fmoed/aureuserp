@@ -335,3 +335,53 @@ it('hides events owned by another company', function () {
     expect($visible)->toContain($own->id)
         ->not->toContain($other->id);
 });
+
+it('scopes the attendance events export query by employee and date range', function () {
+    $empA = Employee::factory()->create(['user_id' => User::factory()]);
+    $empB = Employee::factory()->create(['user_id' => User::factory()]);
+
+    $evt1 = AttendanceEvent::create([
+        'employee_id' => $empA->id,
+        'punched_at'  => '2026-09-01 08:00:00',
+        'direction'   => AttendanceEvent::DIRECTION_IN,
+        'source'      => 'manual',
+        'source_ref'  => 'ref-1',
+    ]);
+
+    $evt2 = AttendanceEvent::create([
+        'employee_id' => $empA->id,
+        'punched_at'  => '2026-09-15 08:00:00',
+        'direction'   => AttendanceEvent::DIRECTION_IN,
+        'source'      => 'manual',
+        'source_ref'  => 'ref-2',
+    ]);
+
+    $evt3 = AttendanceEvent::create([
+        'employee_id' => $empB->id,
+        'punched_at'  => '2026-09-15 08:00:00',
+        'direction'   => AttendanceEvent::DIRECTION_IN,
+        'source'      => 'manual',
+        'source_ref'  => 'ref-3',
+    ]);
+
+    $query = AttendanceEventExporter::scopeQuery(AttendanceEvent::query(), [
+        'employee_id' => $empA->id,
+        'date_from'   => '2026-09-10',
+        'date_to'     => '2026-09-20',
+    ]);
+
+    expect($query->pluck('id')->all())->toBe([$evt2->id]);
+});
+
+it('names attendance events export files by period and scope', function () {
+    $employee = Employee::factory()->create(['user_id' => User::factory(), 'name' => 'Ahmed Ali']);
+
+    $export = new Export(['exporter' => AttendanceEventExporter::class]);
+    $exporter = $export->getExporter([], [
+        'date_from'   => '2026-09-01',
+        'date_to'     => '2026-09-30',
+        'employee_id' => $employee->id,
+    ]);
+
+    expect($exporter->getFileName(new Export))->toBe('attendance-events_2026-09-01_to_2026-09-30_emp-ahmed-ali');
+});

@@ -172,7 +172,8 @@ class AttendanceEventsTable
                     ->label(__('attendance::filament/resources/attendance-event.table.toolbar-actions.export'))
                     ->icon('heroicon-o-arrow-up-tray')
                     ->exporter(AttendanceEventExporter::class)
-                    ->maxRows(self::EXPORT_MAX_ROWS),
+                    ->maxRows(self::EXPORT_MAX_ROWS)
+                    ->modifyQueryUsing(fn (Builder $query, array $options): Builder => AttendanceEventExporter::scopeQuery($query, $options)),
             ]);
     }
 }

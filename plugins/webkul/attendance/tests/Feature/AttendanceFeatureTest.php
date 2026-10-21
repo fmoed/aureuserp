@@ -1154,3 +1154,54 @@ it('saves an untouched edit without drifting the stored times', function () {
 
     expect([$attendance->getRawOriginal('check_in'), $attendance->getRawOriginal('check_out')])->toBe($rawBefore);
 });
+
+it('caps attendance exports at ten thousand rows', function () {
+    expect(AttendancesTable::EXPORT_MAX_ROWS)->toBe(10000);
+});
+
+it('scopes the attendance export query by employee and date range', function () {
+    $empA = Employee::factory()->create(['user_id' => User::factory()]);
+    $empB = Employee::factory()->create(['user_id' => User::factory()]);
+
+    $att1 = Attendance::create([
+        'employee_id' => $empA->id,
+        'work_date'   => '2026-09-01',
+        'check_in'    => '2026-09-01 08:00:00',
+        'source'      => 'manual',
+    ]);
+
+    $att2 = Attendance::create([
+        'employee_id' => $empA->id,
+        'work_date'   => '2026-09-15',
+        'check_in'    => '2026-09-15 08:00:00',
+        'source'      => 'manual',
+    ]);
+
+    $att3 = Attendance::create([
+        'employee_id' => $empB->id,
+        'work_date'   => '2026-09-15',
+        'check_in'    => '2026-09-15 08:00:00',
+        'source'      => 'manual',
+    ]);
+
+    $query = AttendanceExporter::scopeQuery(Attendance::query(), [
+        'employee_id' => $empA->id,
+        'date_from'   => '2026-09-10',
+        'date_to'     => '2026-09-20',
+    ]);
+
+    expect($query->pluck('id')->all())->toBe([$att2->id]);
+});
+
+it('names attendance export files by period and scope', function () {
+    $employee = Employee::factory()->create(['user_id' => User::factory(), 'name' => 'Ahmed Ali']);
+
+    $export = new Export(['exporter' => AttendanceExporter::class]);
+    $exporter = $export->getExporter([], [
+        'date_from'   => '2026-09-01',
+        'date_to'     => '2026-09-30',
+        'employee_id' => $employee->id,
+    ]);
+
+    expect($exporter->getFileName(new Export))->toBe('attendances_2026-09-01_to_2026-09-30_emp-ahmed-ali');
+});

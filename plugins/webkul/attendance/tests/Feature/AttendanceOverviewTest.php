@@ -841,14 +841,17 @@ it('exposes the detail exporter columns', function () {
 
     expect($columns)->toBe([
         'employee',
-        'date',
-        'day',
-        'status',
-        'minutes',
+        'schedule',
+        'workdays',
+        'present',
+        'absent',
+        'on_leave',
+        'hours',
+        'absence_rate',
     ]);
 });
 
-it('exports one row per employee and workday with status and minutes', function () {
+it('exports one matrix row per employee with summary and daily cells', function () {
     Carbon::setTestNow('2026-09-15 12:00:00');
 
     try {
@@ -863,8 +866,8 @@ it('exports one row per employee and workday with status and minutes', function 
         $export = Export::query()->latest('id')->firstOrFail();
 
         expect($export->exporter)->toBe(AbsenceDetailExporter::class)
-            ->and($export->total_rows)->toBe(5)
-            ->and($export->successful_rows)->toBe(5);
+            ->and($export->total_rows)->toBe(1)
+            ->and($export->successful_rows)->toBe(1);
 
         $disk = $export->getFileDisk();
         $directory = $export->getFileDirectory();
@@ -876,12 +879,11 @@ it('exports one row per employee and workday with status and minutes', function 
         $headers = $disk->get($directory.DIRECTORY_SEPARATOR.'headers.csv');
         $content = $disk->get($dataFile);
 
-        expect(substr_count(trim($content), "\n"))->toBe(4)
+        expect(substr_count(trim($content), "\n"))->toBe(0)
             ->and($headers)->toContain('Employee')
-            ->and($headers)->toContain('Status')
+            ->and($headers)->toContain('Schedule')
+            ->and($headers)->toContain('2026-09-07')
             ->and($content)->toContain('Overview Emp A')
-            ->and($content)->toContain('2026-09-07')
-            ->and($content)->toContain('Monday')
             ->and($content)->toContain('Present')
             ->and($content)->toContain('Absent')
             ->and($content)->toContain('On leave');
@@ -891,7 +893,7 @@ it('exports one row per employee and workday with status and minutes', function 
 });
 
 it('aborts detail exports above the row cap without writing data rows', function () {
-    config()->set('attendance.export.max_detail_rows', 4);
+    config()->set('attendance.export.max_detail_rows', 0);
 
     Carbon::setTestNow('2026-09-15 12:00:00');
 
@@ -907,7 +909,7 @@ it('aborts detail exports above the row cap without writing data rows', function
         $export = Export::query()->latest('id')->firstOrFail();
 
         expect($export->exporter)->toBe(AbsenceDetailExporter::class)
-            ->and($export->total_rows)->toBe(5)
+            ->and($export->total_rows)->toBe(1)
             ->and($export->successful_rows)->toBe(0);
 
         $dataFiles = collect($export->getFileDisk()->files($export->getFileDirectory()))
