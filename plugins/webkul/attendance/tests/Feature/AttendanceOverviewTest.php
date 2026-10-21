@@ -466,6 +466,45 @@ it('maps every register status to a distinct one-glyph cell code', function () {
     expect($codes->unique()->count())->toBe($codes->count());
 });
 
+it('compresses the page header into one summary strip with the daily trend chart', function () {
+    Carbon::setTestNow('2026-09-15 12:00:00');
+
+    try {
+        actingAsOverviewUser();
+
+        overviewPageDataset();
+
+        $component = Livewire::test(AttendanceOverview::class);
+
+        $html = $component->html();
+
+        // الشريط المضغوط بدل شبكة البطاقات السبع ذات الأنماط المضمنة
+        expect($html)
+            ->not->toContain('style="display: grid"')
+            ->not->toContain('h-11 w-11')
+            ->toContain('attendance-daily-trend');
+
+        // عنوان الرسم يأتي من مفتاح الترجمة الموجود أصلاً
+        $component->assertSee(__('attendance::filament/pages/overview.grid.chart'));
+
+        // عمود لكل يوم في نطاق العرض (شهر سبتمبر كاملاً) ولا رسم في وضع السنة
+        $dayColumns = substr_count($html, 'class="flex h-24 min-w-[1.25rem]');
+        expect($dayColumns)->toBe(30);
+
+        $component
+            ->call('showRegisterView', 'totals')
+            ->fillForm([
+                'view_mode' => 'year',
+                'year'      => 2026,
+            ], 'filterForm')
+            ->call('applyFilters');
+
+        expect($component->html())->not->toContain('attendance-daily-trend');
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
 it('narrows register day columns and pins the employee column while scrolling', function () {
     Carbon::setTestNow('2026-09-15 12:00:00');
 
