@@ -16,6 +16,7 @@ use Webkul\Attendance\Models\Attendance;
 use Webkul\Attendance\Models\AttendanceEvent;
 use Webkul\Attendance\Policies\AttendanceEventPolicy;
 use Webkul\Attendance\Writers\WriterRegistry;
+use Webkul\Employee\Filament\Resources\EmployeeResource;
 use Webkul\Employee\Models\Employee;
 use Webkul\Security\Models\User;
 use Webkul\Support\Enums\NavigationGroup;
@@ -128,6 +129,40 @@ it('maps persisted events to export values on the employee wall clock', function
         '',
         'Pending',
     ]);
+});
+
+it('links the event employee name to the employee view page', function () {
+    $employee = Employee::factory()->create();
+    $event = EventGateway::push(
+        $employee->id,
+        '2026-09-24 08:00:00', 0, 'biometric-attendance:3', 'evt-link'
+    );
+
+    FilamentHelper::actingAs([
+        'view_any_attendance_attendance::event',
+        'view_employee_employee',
+    ]);
+
+    $column = collect(Livewire::test(ListAttendanceEvents::class)->instance()->getTable()->getColumns())
+        ->first(fn (object $column): bool => $column->getName() === 'employee.name');
+
+    expect($column)->not->toBeNull()
+        ->and($column->record($event)->getUrl())->toBe(EmployeeResource::getUrl('view', ['record' => $employee]));
+});
+
+it('hides the event employee link without the employee view permission', function () {
+    $employee = Employee::factory()->create();
+    $event = EventGateway::push(
+        $employee->id,
+        '2026-09-24 08:00:00', 0, 'biometric-attendance:3', 'evt-link-denied'
+    );
+
+    FilamentHelper::actingAs(['view_any_attendance_attendance::event']);
+
+    $column = collect(Livewire::test(ListAttendanceEvents::class)->instance()->getTable()->getColumns())
+        ->first(fn (object $column): bool => $column->getName() === 'employee.name');
+
+    expect($column?->record($event)->getUrl())->toBeNull();
 });
 
 it('renders the events list page', function () {

@@ -13,6 +13,7 @@ use Webkul\Attendance\Filament\Exports\AttendanceEventExporter;
 use Webkul\Attendance\Models\Attendance;
 use Webkul\Attendance\Models\AttendanceEvent;
 use Webkul\Attendance\Services\AttendanceOverviewService;
+use Webkul\Employee\Filament\Resources\EmployeeResource;
 
 class AttendanceEventsTable
 {
@@ -86,7 +87,10 @@ class AttendanceEventsTable
                 TextColumn::make('employee.name')
                     ->label(__('attendance::filament/resources/attendance-event.table.columns.employee'))
                     ->sortable()
-                    ->searchable(),
+                    ->searchable()
+                    ->url(fn (AttendanceEvent $event): ?string => $event->employee && auth()->user()?->can('view', $event->employee)
+                        ? EmployeeResource::getUrl('view', ['record' => $event->employee])
+                        : null),
                 TextColumn::make('punched_at')
                     ->label(__('attendance::filament/resources/attendance-event.table.columns.punched-at'))
                     ->state(fn (AttendanceEvent $event) => static::eventWallClock($event))

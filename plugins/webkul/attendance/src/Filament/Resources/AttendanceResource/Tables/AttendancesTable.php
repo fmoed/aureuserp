@@ -19,6 +19,7 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
 use Webkul\Attendance\Filament\Exports\AttendanceExporter;
 use Webkul\Attendance\Models\Attendance;
+use Webkul\Employee\Filament\Resources\EmployeeResource;
 
 class AttendancesTable
 {
@@ -51,7 +52,10 @@ class AttendancesTable
                 TextColumn::make('employee.name')
                     ->label(__('attendance::filament/resources/attendance.table.columns.employee'))
                     ->sortable()
-                    ->searchable(),
+                    ->searchable()
+                    ->url(fn (Attendance $record): ?string => $record->employee && auth()->user()?->can('view', $record->employee)
+                        ? EmployeeResource::getUrl('view', ['record' => $record->employee])
+                        : null),
                 TextColumn::make('work_date')
                     ->label(__('attendance::filament/resources/attendance.table.columns.work-date'))
                     ->date()

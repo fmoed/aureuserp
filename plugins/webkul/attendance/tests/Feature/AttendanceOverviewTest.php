@@ -17,6 +17,7 @@ use Webkul\Attendance\Filament\Resources\AttendanceResource;
 use Webkul\Attendance\Filament\Tables\AttendanceRegisterTable;
 use Webkul\Attendance\Models\Attendance;
 use Webkul\Attendance\Services\AttendanceOverviewService;
+use Webkul\Employee\Filament\Resources\EmployeeResource;
 use Webkul\Employee\Models\Employee;
 use Webkul\Security\Models\User;
 use Webkul\Support\Enums\NavigationGroup;
@@ -440,6 +441,42 @@ it('configures the register table with the shared pagination whitelist', functio
 
     expect($page->getTable()->getPaginationPageOptions())->toBe([10, 25, 50])
         ->and($page->getDefaultTableRecordsPerPageSelectOption())->toBe(25);
+});
+
+it('links the register employee name to the employee view page', function () {
+    Carbon::setTestNow('2026-09-15 12:00:00');
+
+    try {
+        actingAsOverviewUser(['page_attendance_attendance_overview', 'view_employee_employee']);
+
+        ['empA' => $empA] = overviewDataset(Company::whereKey(current_company_id())->firstOrFail());
+
+        $nameColumn = collect(Livewire::test(AttendanceOverview::class)->instance()->getTable()->getColumns())
+            ->first(fn (object $column): bool => $column->getName() === 'name');
+
+        expect($nameColumn)->not->toBeNull()
+            ->and($nameColumn->record($empA)->getUrl())->toBe(EmployeeResource::getUrl('view', ['record' => $empA]))
+            ->and($nameColumn->record($empA)->getTooltip())->toBe($empA->job_title);
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
+it('hides the register employee link without the employee view permission', function () {
+    Carbon::setTestNow('2026-09-15 12:00:00');
+
+    try {
+        actingAsOverviewUser();
+
+        ['empA' => $empA] = overviewDataset(Company::whereKey(current_company_id())->firstOrFail());
+
+        $nameColumn = collect(Livewire::test(AttendanceOverview::class)->instance()->getTable()->getColumns())
+            ->first(fn (object $column): bool => $column->getName() === 'name');
+
+        expect($nameColumn?->record($empA)->getUrl())->toBeNull();
+    } finally {
+        Carbon::setTestNow();
+    }
 });
 
 it('maps every register status to a distinct one-glyph cell code', function () {
