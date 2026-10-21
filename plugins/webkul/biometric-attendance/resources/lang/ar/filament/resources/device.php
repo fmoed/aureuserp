@@ -30,6 +30,7 @@ return [
             'protocol'   => 'البروتوكول',
             'active'     => 'نشط',
             'last-sync'  => 'آخر مزامنة',
+            'last-error' => 'آخر خطأ',
             'created-at' => 'تاريخ الإنشاء',
         ],
 

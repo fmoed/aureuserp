@@ -14,6 +14,8 @@ use Filament\Tables\Table;
 use Illuminate\Support\Facades\Artisan;
 use Throwable;
 use Webkul\BiometricAttendance\Contracts\ZktecoClientInterface;
+use Webkul\BiometricAttendance\Filament\Resources\DeviceResource;
+use Webkul\BiometricAttendance\Models\Device;
 use Webkul\BiometricAttendance\Services\AttendanceBridge;
 use Webkul\BiometricAttendance\Services\DeviceSyncService;
 use Webkul\BiometricAttendance\Services\ZktecoConnectionException;
@@ -46,8 +48,16 @@ class DevicesTable
                     ->sortable(),
                 TextColumn::make('last_sync_at')
                     ->label(__('biometric-attendance::filament/resources/device.table.columns.last-sync'))
-                    ->dateTime()
+                    ->since()
+                    ->dateTimeTooltip()
                     ->sortable()
+                    ->toggleable(),
+                TextColumn::make('last_error')
+                    ->label(__('biometric-attendance::filament/resources/device.table.columns.last-error'))
+                    ->limit(40)
+                    ->color('danger')
+                    ->tooltip(fn (Device $record): ?string => $record->last_error ?: null)
+                    ->placeholder('—')
                     ->toggleable(),
                 TextColumn::make('created_at')
                     ->label(__('biometric-attendance::filament/resources/device.table.columns.created-at'))
@@ -55,6 +65,7 @@ class DevicesTable
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
+            ->recordUrl(fn (Device $record): string => DeviceResource::getUrl('edit', ['record' => $record]))
             ->recordActions([
                 Action::make('testConnection')
                     ->label(__('biometric-attendance::filament/resources/device.table.actions.test-connection.label'))
