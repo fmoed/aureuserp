@@ -107,30 +107,55 @@
         </div>
     </x-filament::section>
 
-    {{-- مفتاح عرض الجدول: ملخص الموظفين أو السجل اليومي (مخفية في وضع السنة: ملخص فقط) --}}
-    @if ($this->rangeMode !== 'year')
-        <div class="flex flex-wrap items-center gap-2">
-            <x-filament::button
-                size="sm"
-                wire:click="showRegisterView('totals')"
-                :color="$this->registerView === 'totals' ? 'primary' : 'gray'"
-                :outlined="$this->registerView !== 'totals'"
-                icon="heroicon-m-squares-2x2"
-            >
-                {{ __('attendance::filament/pages/overview.table.view.totals') }}
-            </x-filament::button>
+    {{-- مفتاح عرض الجدول: ملخص الموظفين أو السجل اليومي (مخفية في وضع السنة: ملخص فقط)
+        مع شرائح الفلاتر المطبقة مرئية دائماً حتى مع طي قسم التصفية --}}
+    <div class="flex flex-wrap items-center justify-between gap-2">
+        @if ($this->rangeMode !== 'year')
+            <div class="flex flex-wrap items-center gap-2">
+                <x-filament::button
+                    size="sm"
+                    wire:click="showRegisterView('totals')"
+                    :color="$this->registerView === 'totals' ? 'primary' : 'gray'"
+                    :outlined="$this->registerView !== 'totals'"
+                    icon="heroicon-m-squares-2x2"
+                >
+                    {{ __('attendance::filament/pages/overview.table.view.totals') }}
+                </x-filament::button>
 
-            <x-filament::button
-                size="sm"
-                wire:click="showRegisterView('days')"
-                :color="$this->registerView === 'days' ? 'primary' : 'gray'"
-                :outlined="$this->registerView !== 'days'"
-                icon="heroicon-m-table-cells"
-            >
-                {{ __('attendance::filament/pages/overview.table.view.days') }}
-            </x-filament::button>
+                <x-filament::button
+                    size="sm"
+                    wire:click="showRegisterView('days')"
+                    :color="$this->registerView === 'days' ? 'primary' : 'gray'"
+                    :outlined="$this->registerView !== 'days'"
+                    icon="heroicon-m-table-cells"
+                >
+                    {{ __('attendance::filament/pages/overview.table.view.days') }}
+                </x-filament::button>
+            </div>
+        @endif
+
+        <div class="flex flex-wrap items-center gap-2">
+            <span class="inline-flex items-center gap-1.5 rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700 dark:bg-white/10 dark:text-gray-200">
+                {{ __('attendance::filament/pages/overview.filter-chips.period') }}:
+                <span class="font-semibold">{{ $this->appliedPeriodLabel() }}</span>
+            </span>
+
+            @if ($appliedEmployee = $this->appliedEmployeeName())
+                <span class="inline-flex items-center gap-1.5 rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700 dark:bg-white/10 dark:text-gray-200">
+                    {{ __('attendance::filament/pages/overview.filter-chips.employee') }}:
+                    <span class="font-semibold">{{ $appliedEmployee }}</span>
+                    <button
+                        type="button"
+                        wire:click="clearEmployee"
+                        class="-me-1 rounded-full p-0.5 text-gray-400 transition hover:bg-rose-100 hover:text-rose-600 dark:hover:bg-rose-500/20"
+                        title="{{ __('attendance::filament/pages/overview.filter-chips.clear') }}"
+                    >
+                        <x-filament::icon icon="heroicon-m-x-mark" class="h-3.5 w-3.5" />
+                    </button>
+                </span>
+            @endif
         </div>
-    @endif
+    </div>
 
     {{-- جدول السجل: تخطيط ثابت مع العروض الصريحة للأعمدة، لأن table-auto
         يوزع المساحة الفارغة على كل الأعمدة فيتمدد الرقم بعيدًا عن ترويسته.

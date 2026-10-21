@@ -369,6 +369,50 @@ class AttendanceOverview extends Page implements HasForms, HasTable
         $this->resetTable();
     }
 
+    /**
+     * Applied period label for the filter chips, localized on the
+     * healed display range (month name, explicit range or bare year).
+     */
+    public function appliedPeriodLabel(): string
+    {
+        [$from, $to] = $this->resolveDisplayRange();
+
+        if ($this->rangeMode === 'year') {
+            return $from->format('Y');
+        }
+
+        if ($this->rangeMode === 'month') {
+            return $from->locale(app()->getLocale())->translatedFormat('F Y');
+        }
+
+        return $from->locale(app()->getLocale())->translatedFormat('d M Y')
+            .' → '
+            .$to->locale(app()->getLocale())->translatedFormat('d M Y');
+    }
+
+    /**
+     * Applied employee name for the filter chips (null = all employees).
+     */
+    public function appliedEmployeeName(): ?string
+    {
+        if (! $this->employeeId) {
+            return null;
+        }
+
+        return Employee::query()->whereKey($this->employeeId)->value('name');
+    }
+
+    /**
+     * One-click chip action: drops the employee filter and re-applies the
+     * remaining filters without opening the collapsed filter section.
+     */
+    public function clearEmployee(): void
+    {
+        $this->filterData['employee_id'] = null;
+
+        $this->applyFilters();
+    }
+
     public function table(Table $table): Table
     {
         return AttendanceRegisterTable::configure($table, $this);
