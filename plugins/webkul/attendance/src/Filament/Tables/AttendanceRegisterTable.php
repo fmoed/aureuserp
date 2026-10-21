@@ -3,7 +3,9 @@
 namespace Webkul\Attendance\Filament\Tables;
 
 use Filament\Support\Enums\TextSize;
+use Filament\Support\Enums\Width;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\Filter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
@@ -14,7 +16,7 @@ use Webkul\Employee\Filament\Resources\EmployeeResource;
 use Webkul\Employee\Models\Employee;
 
 /**
- * Attendance register ("سجل التحضير"): one row per employee. The page
+ * Attendance register: one row per employee. The page
  * picks the column set through registerView: day-by-day cells for the
  * applied display range, or the per-employee totals instead of the wide
  * day grid. Every day up to today carries an explicit colored status
@@ -39,7 +41,10 @@ class AttendanceRegisterTable
                 : null)
             ->tooltip(fn (Employee $record): ?string => $record->job_title ?: null)
             ->extraHeaderAttributes(['class' => 'fi-reg-sticky'])
-            ->extraCellAttributes(['class' => 'fi-reg-sticky']);
+            ->extraCellAttributes(fn (Employee $record): array => [
+                'class' => 'fi-reg-sticky '.(preg_match('/\p{Arabic}/u', (string) $record->name) ? 'fi-reg-name-rtl' : 'fi-reg-name-ltr'),
+                'title' => (string) $record->name,
+            ]);
 
         $scheduleColumn = TextColumn::make('schedule')
             ->label(__('attendance::filament/pages/overview.table.columns.schedule'))
@@ -52,7 +57,7 @@ class AttendanceRegisterTable
         if ($page->registerView === AttendanceOverview::REGISTER_TOTALS || $page->rangeMode === 'year') {
             // Totals sit next to the name; the long roster name goes last so
             // the eye connects each row of numbers to its employee at once.
-            return self::baseTable($table, $grid, array_merge([$nameColumn], self::totalsColumns($grid), [$scheduleColumn]));
+            return self::baseTable($table, $page, $grid, array_merge([$nameColumn], self::totalsColumns($grid), [$scheduleColumn]));
         }
 
         $columns = [$nameColumn, $scheduleColumn];
@@ -60,6 +65,7 @@ class AttendanceRegisterTable
         foreach ($page->getGridDays() as $day) {
             $columns[] = TextColumn::make('cells.'.$day)
                 ->label(Carbon::parse($day)->translatedFormat('D j'))
+                ->wrapHeader()
                 ->state(fn (Employee $record): string => (string) ($grid[$record->getKey()]['cells'][$day] ?? ''))
                 ->formatStateUsing(fn (mixed $state): string => self::statusShortLabel((string) $state))
                 ->tooltip(fn (mixed $state): ?string => filled($state) && $state !== AttendanceOverviewService::STATUS_FUTURE
@@ -69,12 +75,13 @@ class AttendanceRegisterTable
                 ->size(TextSize::Small)
                 ->alignCenter()
                 ->width('2.75rem')
-                ->extraHeaderAttributes(['style' => 'padding-inline: .25rem'])
+                ->extraHeaderAttributes(['class' => 'fi-reg-day-header'])
+                ->extraCellAttributes(['class' => 'fi-reg-day-cell'])
                 ->toggleable()
                 ->placeholder('');
         }
 
-        return self::baseTable($table, $grid, $columns);
+        return self::baseTable($table, $page, $grid, $columns);
     }
 
     /**
@@ -82,7 +89,7 @@ class AttendanceRegisterTable
      * register): visible present/absent/leave/rate plus the extra
      * pending/holidays/workdays behind the column toggle. Numeric columns
      * carry a fixed width so the summary stays dense: a full-width spread
-     * leaves each value floating far from its header in RTL ("توهان").
+     * leaves each value floating far from its header in RTL.
      *
      * @param  Collection<int, array>  $grid
      * @return list<TextColumn>
@@ -130,12 +137,19 @@ class AttendanceRegisterTable
      * @param  Collection<int, array>  $grid
      * @param  list<TextColumn>  $columns
      */
-    protected static function baseTable(Table $table, mixed $grid, array $columns): Table
+    protected static function baseTable(Table $table, AttendanceOverview $page, mixed $grid, array $columns): Table
     {
         return $table
             ->query(fn (): Builder => Employee::query()
                 ->whereIn('id', $grid->keys()->all()))
             ->columns($columns)
+            ->filters([
+                Filter::make('overview')
+                    ->columns(2)
+                    ->schema(fn (): array => $page->getFilterFormComponents())
+                    ->indicateUsing(fn (): array => $page->getTableFilterIndicators()),
+            ])
+            ->filtersFormWidth(Width::Medium)
             ->defaultSort('name')
             ->persistSortInSession()
             ->persistSearchInSession()

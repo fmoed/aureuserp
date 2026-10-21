@@ -11,10 +11,12 @@ use Filament\Forms\Concerns\InteractsWithForms;
 use Filament\Forms\Contracts\HasForms;
 use Filament\Pages\Page;
 use Filament\Panel;
+use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
+use Filament\Tables\Filters\Indicator;
 use Filament\Tables\Table;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Database\Eloquent\Builder;
@@ -31,7 +33,7 @@ use Webkul\Employee\Models\Employee;
 use Webkul\Support\Enums\NavigationGroup;
 
 /**
- * Attendance register ("سجل التحضير"): one row per employee, one column
+ * Attendance register: one row per employee, one column
  * per calendar day of the applied display range (a whole month in month
  * mode, an arbitrary range in range mode), every day up to today carrying
  * an explicit colored status word. Two ranges are tracked: the display
@@ -155,6 +157,21 @@ class AttendanceOverview extends Page implements HasForms, HasTable
         return 'page_attendance_attendance_overview';
     }
 
+    /**
+     * @return array{employee_id: null, view_mode: string, month: int, year: int, date_from: string, date_to: string}
+     */
+    protected function defaultFilterValues(): array
+    {
+        return [
+            'employee_id' => null,
+            'view_mode'   => 'month',
+            'month'       => Carbon::today()->month,
+            'year'        => Carbon::today()->year,
+            'date_from'   => Carbon::today()->startOfMonth()->toDateString(),
+            'date_to'     => Carbon::today()->toDateString(),
+        ];
+    }
+
     public function mount(): void
     {
         // The tab arrives via the URL (#[Url] restores it before mount),
@@ -163,16 +180,15 @@ class AttendanceOverview extends Page implements HasForms, HasTable
             $this->registerView = self::REGISTER_DAYS;
         }
 
-        $this->filterForm->fill([
-            'employee_id' => null,
-            'view_mode'   => 'month',
-            'month'       => Carbon::today()->month,
-            'year'        => Carbon::today()->year,
-            'date_from'   => Carbon::today()->startOfMonth()->toDateString(),
-            'date_to'     => Carbon::today()->toDateString(),
-        ]);
+        $defaults = $this->defaultFilterValues();
 
-        $this->applyFilters();
+        $this->filterData = $defaults;
+        $this->tableFilters = ['overview' => $defaults];
+        $this->tableDeferredFilters = ['overview' => $defaults];
+
+        $this->filterForm->fill($defaults);
+
+        $this->applyFilterState($defaults, rebuildTable: false);
     }
 
     protected function getForms(): array
@@ -182,15 +198,20 @@ class AttendanceOverview extends Page implements HasForms, HasTable
         ];
     }
 
-    public function filterForm(Schema $schema): Schema
+    /**
+     * Filter components shared by the table toolbar filter popover and
+     * the page's filter schema.
+     *
+     * @return list<Component>
+     */
+    public function getFilterFormComponents(): array
     {
         $isMonth = fn (Get $get): bool => ($get('view_mode') ?? 'month') === 'month';
         $isRange = fn (Get $get): bool => $get('view_mode') === 'range';
         $isMonthOrYear = fn (Get $get): bool => in_array($get('view_mode') ?? 'month', ['month', 'year'], true);
 
         // Year mode is summary-only (it forces the totals tab), so its
-        // option only makes sense while the totals tab is active. The form
-        // is rebuilt on every request, hence on every tab toggle as well.
+        // option only makes sense while the totals tab is active.
         $modeOptions = [
             'month' => __('attendance::filament/pages/overview.form.mode-month'),
             'range' => __('attendance::filament/pages/overview.form.mode-range'),
@@ -200,101 +221,170 @@ class AttendanceOverview extends Page implements HasForms, HasTable
             $modeOptions['year'] = __('attendance::filament/pages/overview.form.mode-year');
         }
 
-        return $schema
-            ->statePath('filterData')
-            ->components([
-                Select::make('employee_id')
-                    ->label(__('attendance::filament/pages/overview.form.employee'))
-                    ->options(fn (): array => Employee::query()->orderBy('name')->pluck('name', 'id')->all())
-                    ->searchable()
-                    ->placeholder(__('attendance::filament/pages/overview.form.all-employees')),
-                Select::make('view_mode')
-                    ->label(__('attendance::filament/pages/overview.form.view-mode'))
-                    ->options($modeOptions)
-                    ->default('month')
-                    ->required()
-                    ->live(),
-                Select::make('month')
-                    ->label(__('attendance::filament/pages/overview.form.month'))
-                    ->options(function (Get $get): array {
-                        $today = Carbon::today();
-                        $year = (int) ($get('year') ?? $today->year);
+        return [
+            Select::make('employee_id')
+                ->label(__('attendance::filament/pages/overview.form.employee'))
+                ->options(fn (): array => AttendanceOverviewService::scopeEligibleEmployees(Employee::query())->orderBy('name')->pluck('name', 'id')->all())
+                ->searchable()
+                ->placeholder(__('attendance::filament/pages/overview.form.all-employees'))
+                ->columnSpanFull(),
+            Select::make('view_mode')
+                ->label(__('attendance::filament/pages/overview.form.view-mode'))
+                ->options($modeOptions)
+                ->default('month')
+                ->required()
+                ->selectablePlaceholder(false)
+                ->live()
+                ->columnSpanFull(),
+            Select::make('month')
+                ->label(__('attendance::filament/pages/overview.form.month'))
+                ->options(function (Get $get): array {
+                    $today = Carbon::today();
+                    $year = (int) ($get('year') ?? $today->year);
 
-                        return collect(range(1, 12))
-                            ->when(
-                                $year === $today->year,
-                                fn (Collection $months): Collection => $months->filter(fn (int $month): bool => $month <= $today->month),
-                            )
-                            ->mapWithKeys(fn (int $month): array => [
-                                $month => Carbon::create(2000, $month, 1)->locale(app()->getLocale())->isoFormat('MMMM'),
-                            ])
-                            ->all();
-                    })
-                    ->required()
-                    ->visible($isMonth)
-                    ->rules([
-                        function (Get $get): \Closure {
-                            return function (string $attribute, mixed $value, \Closure $fail) use ($get): void {
-                                $today = Carbon::today();
-                                $year = (int) ($get('year') ?? $today->year);
-                                $month = (int) $value;
-
-                                if ($year > $today->year || ($year === $today->year && $month > $today->month)) {
-                                    $fail(__('attendance::filament/pages/overview.form.month-future'));
-                                }
-                            };
-                        },
-                    ]),
-                Select::make('year')
-                    ->label(__('attendance::filament/pages/overview.form.year'))
-                    ->options(fn (): array => collect(range(Carbon::today()->year - 2, Carbon::today()->year))
-                        ->mapWithKeys(fn (int $year): array => [$year => (string) $year])
-                        ->all())
-                    ->required()
-                    ->live()
-                    ->visible($isMonthOrYear)
-                    ->helperText(__('attendance::filament/pages/overview.form.year-hint')),
-                DatePicker::make('date_from')
-                    ->label(__('attendance::filament/pages/overview.form.date-from'))
-                    ->required()
-                    ->maxDate(Carbon::today()->toDateString())
-                    ->visible($isRange)
-                    ->helperText(__('attendance::filament/pages/overview.form.range-hint', [
-                        'days' => AttendanceOverviewService::MAX_RANGE_DAYS,
-                    ])),
-                DatePicker::make('date_to')
-                    ->label(__('attendance::filament/pages/overview.form.date-to'))
-                    ->required()
-                    ->afterOrEqual('date_from')
-                    ->maxDate(Carbon::today()->toDateString())
-                    ->visible($isRange)
-                    ->helperText(__('attendance::filament/pages/overview.form.range-hint', [
-                        'days' => AttendanceOverviewService::MAX_RANGE_DAYS,
-                    ]))
-                    ->rules([function (Get $get): \Closure {
+                    return collect(range(1, 12))
+                        ->when(
+                            $year === $today->year,
+                            fn (Collection $months): Collection => $months->filter(fn (int $month): bool => $month <= $today->month),
+                        )
+                        ->mapWithKeys(fn (int $month): array => [
+                            $month => Carbon::create(2000, $month, 1)->locale(app()->getLocale())->isoFormat('MMMM'),
+                        ])
+                        ->all();
+                })
+                ->default(fn (): int => Carbon::today()->month)
+                ->required()
+                ->selectablePlaceholder(false)
+                ->visible($isMonth)
+                ->rules([
+                    function (Get $get): \Closure {
                         return function (string $attribute, mixed $value, \Closure $fail) use ($get): void {
-                            $from = $get('date_from');
+                            $today = Carbon::today();
+                            $year = (int) ($get('year') ?? $today->year);
+                            $month = (int) $value;
 
-                            if (! $from || ! $value) {
-                                return;
-                            }
-
-                            if (AttendanceOverviewService::rangeDays($from, $value) > AttendanceOverviewService::MAX_RANGE_DAYS) {
-                                $fail(__('attendance::filament/pages/overview.form.range-too-wide', [
-                                    'days' => AttendanceOverviewService::MAX_RANGE_DAYS,
-                                ]));
+                            if ($year > $today->year || ($year === $today->year && $month > $today->month)) {
+                                $fail(__('attendance::filament/pages/overview.form.month-future'));
                             }
                         };
-                    }]),
-            ])
+                    },
+                ]),
+            Select::make('year')
+                ->label(__('attendance::filament/pages/overview.form.year'))
+                ->options(fn (): array => collect(range(Carbon::today()->year - 2, Carbon::today()->year))
+                    ->mapWithKeys(fn (int $year): array => [$year => (string) $year])
+                    ->all())
+                ->default(fn (): int => Carbon::today()->year)
+                ->required()
+                ->selectablePlaceholder(false)
+                ->live()
+                ->visible($isMonthOrYear)
+                ->columnSpan(fn (Get $get): int => ($get('view_mode') ?? 'month') === 'year' ? 2 : 1)
+                ->helperText(__('attendance::filament/pages/overview.form.year-hint')),
+            DatePicker::make('date_from')
+                ->label(__('attendance::filament/pages/overview.form.date-from'))
+                ->default(fn (): string => Carbon::today()->startOfMonth()->toDateString())
+                ->required()
+                ->maxDate(Carbon::today()->toDateString())
+                ->visible($isRange)
+                ->helperText(__('attendance::filament/pages/overview.form.range-hint', [
+                    'days' => AttendanceOverviewService::MAX_RANGE_DAYS,
+                ])),
+            DatePicker::make('date_to')
+                ->label(__('attendance::filament/pages/overview.form.date-to'))
+                ->default(fn (): string => Carbon::today()->toDateString())
+                ->required()
+                ->afterOrEqual('date_from')
+                ->maxDate(Carbon::today()->toDateString())
+                ->visible($isRange)
+                ->helperText(__('attendance::filament/pages/overview.form.range-hint', [
+                    'days' => AttendanceOverviewService::MAX_RANGE_DAYS,
+                ]))
+                ->rules([function (Get $get): \Closure {
+                    return function (string $attribute, mixed $value, \Closure $fail) use ($get): void {
+                        $from = $get('date_from');
+
+                        if (! $from || ! $value) {
+                            return;
+                        }
+
+                        if (AttendanceOverviewService::rangeDays($from, $value) > AttendanceOverviewService::MAX_RANGE_DAYS) {
+                            $fail(__('attendance::filament/pages/overview.form.range-too-wide', [
+                                'days' => AttendanceOverviewService::MAX_RANGE_DAYS,
+                            ]));
+                        }
+                    };
+                }]),
+        ];
+    }
+
+    public function filterForm(Schema $schema): Schema
+    {
+        return $schema
+            ->statePath('filterData')
+            ->components($this->getFilterFormComponents())
             ->columns(4);
+    }
+
+    /**
+     * Active filter indicators rendered natively inside the table header.
+     *
+     * @return array<int|string, Indicator>
+     */
+    public function getTableFilterIndicators(): array
+    {
+        $indicators = [
+            Indicator::make(__('attendance::filament/pages/overview.filter-chips.period').': '.$this->appliedPeriodLabel())
+                ->removable(false),
+        ];
+
+        if ($appliedEmployee = $this->appliedEmployeeName()) {
+            $indicators['employee_id'] = Indicator::make(__('attendance::filament/pages/overview.filter-chips.employee').': '.$appliedEmployee)
+                ->removeField('employee_id');
+        }
+
+        return $indicators;
+    }
+
+    /**
+     * Native table filter Apply handler: validates the table filter popover
+     * form, syncs the filter state, and rebuilds the register columns.
+     */
+    public function applyTableFilters(): void
+    {
+        $validated = $this->getTableFiltersForm()->getState();
+
+        $raw = $this->tableDeferredFilters['overview'] ?? [];
+        $data = array_merge($this->defaultFilterValues(), $raw, $validated['overview'] ?? []);
+
+        $this->filterData = $data;
+        $this->tableFilters = ['overview' => $data];
+        $this->tableDeferredFilters = ['overview' => $data];
+
+        $this->applyFilterState($data, rebuildTable: true);
+
+        $this->handleTableFilterUpdates();
     }
 
     public function applyFilters(): void
     {
-        $data = $this->filterForm->getState();
+        $validated = $this->filterForm->getState();
 
-        $this->employeeId = $data['employee_id'] ?? null;
+        $data = array_merge($this->defaultFilterValues(), $this->filterData ?? [], $validated);
+
+        $this->filterData = $data;
+        $this->tableFilters = ['overview' => $data];
+        $this->tableDeferredFilters = ['overview' => $data];
+
+        $this->applyFilterState($data, rebuildTable: true);
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    protected function applyFilterState(array $data, bool $rebuildTable = true): void
+    {
+        $this->employeeId = ! empty($data['employee_id']) ? (int) $data['employee_id'] : null;
 
         $today = Carbon::today();
 
@@ -334,25 +424,45 @@ class AttendanceOverview extends Page implements HasForms, HasTable
         $this->entriesMemo = null;
         $this->registerMemo = null;
 
-        // The register table is configured from the applied ranges (one
-        // column per display day, one row per in-scope employee), so it
-        // must be rebuilt after the filters change — booted() only ran
-        // before the action on this request.
-        $this->resetTable();
+        if ($rebuildTable) {
+            $this->resetTable();
+        }
+    }
+
+    public function resetTableFiltersForm(): void
+    {
+        $this->resetFilters();
     }
 
     public function resetFilters(): void
     {
-        $this->filterForm->fill([
-            'employee_id' => null,
-            'view_mode'   => 'month',
-            'month'       => Carbon::today()->month,
-            'year'        => Carbon::today()->year,
-            'date_from'   => Carbon::today()->startOfMonth()->toDateString(),
-            'date_to'     => Carbon::today()->toDateString(),
-        ]);
+        $defaults = $this->defaultFilterValues();
 
-        $this->applyFilters();
+        $this->filterData = $defaults;
+        $this->tableFilters = ['overview' => $defaults];
+        $this->tableDeferredFilters = ['overview' => $defaults];
+
+        $this->filterForm->fill($defaults);
+
+        $this->applyFilterState($defaults, rebuildTable: true);
+    }
+
+    public function removeTableFilter(string $filterName, ?string $field = null, bool $isRemovingAllFilters = false): void
+    {
+        if ($field === 'employee_id') {
+            $this->clearEmployee();
+
+            return;
+        }
+
+        $this->resetFilters();
+    }
+
+    public function removeTableFilters(): void
+    {
+        $this->clearEmployee();
+        $this->resetTableSearch();
+        $this->resetTableColumnSearches();
     }
 
     public function showRegisterView(string $view): void
@@ -361,12 +471,58 @@ class AttendanceOverview extends Page implements HasForms, HasTable
             return;
         }
 
+        $this->registerView = $view;
+
+        // If switching from year-summary mode back to the daily register,
+        // automatically switch the time range mode back to the current month
+        // so the daily columns can be displayed immediately.
         if ($view === self::REGISTER_DAYS && $this->rangeMode === 'year') {
+            $today = Carbon::today();
+            $this->filterData['view_mode'] = 'month';
+            $this->filterData['month'] = $today->month;
+            $this->filterData['year'] = $today->year;
+
+            if (isset($this->tableFilters['overview'])) {
+                $this->tableFilters['overview']['view_mode'] = 'month';
+                $this->tableFilters['overview']['month'] = $today->month;
+                $this->tableFilters['overview']['year'] = $today->year;
+            }
+
+            if (isset($this->tableDeferredFilters['overview'])) {
+                $this->tableDeferredFilters['overview']['view_mode'] = 'month';
+                $this->tableDeferredFilters['overview']['month'] = $today->month;
+                $this->tableDeferredFilters['overview']['year'] = $today->year;
+            }
+
+            $this->applyFilterState($this->filterData, rebuildTable: true);
+
             return;
         }
 
-        $this->registerView = $view;
         $this->resetTable();
+    }
+
+    /**
+     * Rebuilds the dynamic register table (columns + filter schema + column
+     * manager state) without wiping the applied filter values.
+     */
+    public function resetTable(): void
+    {
+        $this->cachedDefaultTableColumnState = null;
+        $this->tableColumns = [];
+        $this->tableColumnsToggleStateByName = null;
+        $this->hasReorderableTableColumns = null;
+
+        $this->table = $this->table($this->makeTable());
+
+        $this->cacheSchema('tableFiltersForm', $this->getTableFiltersForm(...));
+        $this->getTableFiltersForm()->fill($this->tableDeferredFilters ?? $this->tableFilters ?? ['overview' => $this->filterData]);
+
+        $this->initTableColumnManager();
+
+        $this->resetPage();
+
+        $this->flushCachedTableRecords();
     }
 
     /**
@@ -404,13 +560,23 @@ class AttendanceOverview extends Page implements HasForms, HasTable
 
     /**
      * One-click chip action: drops the employee filter and re-applies the
-     * remaining filters without opening the collapsed filter section.
+     * remaining filters.
      */
     public function clearEmployee(): void
     {
         $this->filterData['employee_id'] = null;
 
-        $this->applyFilters();
+        if (isset($this->tableFilters['overview'])) {
+            $this->tableFilters['overview']['employee_id'] = null;
+        }
+
+        if (isset($this->tableDeferredFilters['overview'])) {
+            $this->tableDeferredFilters['overview']['employee_id'] = null;
+        }
+
+        $this->filterForm->fill($this->filterData);
+
+        $this->applyFilterState($this->filterData, rebuildTable: true);
     }
 
     public function table(Table $table): Table
@@ -766,7 +932,7 @@ class AttendanceOverview extends Page implements HasForms, HasTable
 
     protected function filteredEmployees(): Collection
     {
-        return Employee::query()
+        return AttendanceOverviewService::scopeEligibleEmployees(Employee::query())
             ->when($this->employeeId, fn (Builder $query) => $query->whereKey($this->employeeId))
             ->orderBy('name')
             ->get();
