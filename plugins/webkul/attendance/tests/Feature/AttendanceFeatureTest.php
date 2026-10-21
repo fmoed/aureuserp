@@ -221,7 +221,7 @@ it('aggregates today stats for the dashboard widget', function () {
             'company_id'  => $employeeB->company_id,
         ]);
 
-        // نفس الموظف بصمة ثانية نفس اليوم: صف ثانٍ، الموظف الحاضر نفسه
+        // Same employee, second punch on the same day: second record, same unique present employee
         Attendance::create([
             'employee_id' => $employeeB->id,
             'work_date'   => '2026-09-24',
@@ -231,7 +231,7 @@ it('aggregates today stats for the dashboard widget', function () {
             'company_id'  => $employeeB->company_id,
         ]);
 
-        // يوم آخر لا يدخل في عداد اليوم
+        // Different day; excluded from today's counts
         Attendance::create([
             'employee_id' => $employeeA->id,
             'work_date'   => '2026-09-23',

@@ -53,7 +53,7 @@ class AttendanceStatsWidget extends BaseWidget
 
     protected function getColumns(): int|array|null
     {
-        // هاتف: شبكة 2×2 بدل أربع بطاقات عمودية؛ شاشات متوسطة فأعلى: صف واحد
+        // Mobile: 2x2 grid instead of 4 vertical cards; medium+ screens: single row of 4
         return [
             'default' => 2,
             'sm'      => 2,

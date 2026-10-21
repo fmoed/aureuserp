@@ -195,8 +195,8 @@ it('filters events by pairing linkage', function () {
 
     $employee = Employee::factory()->create(['user_id' => User::factory()]);
 
-    // تُربط البصمة بصف حضور تلقائياً عبر attendance:process-events؛
-    // نبني الربط يدوياً هنا للتحكم في السيناريو مباشرة
+    // Raw punches are paired automatically via attendance:process-events;
+    // we establish the link manually here to control the test scenario directly.
     $paired = EventGateway::push($employee->id, '2026-09-10 08:00:00', 0, 'biometric-attendance:3', 'evt-p1');
     $unpaired = EventGateway::push($employee->id, '2026-09-10 09:00:00', 0, 'biometric-attendance:3', 'evt-p2');
 

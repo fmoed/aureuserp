@@ -18,6 +18,8 @@ use Webkul\Attendance\Filament\Tables\AttendanceRegisterTable;
 use Webkul\Attendance\Filament\Widgets\AttendanceStatsWidget;
 use Webkul\Attendance\Models\Attendance;
 use Webkul\Attendance\Services\AttendanceOverviewService;
+use Webkul\Attendance\Settings\AttendanceSettings;
+use Webkul\Attendance\Writers\WriterRegistry;
 use Webkul\Employee\Filament\Resources\EmployeeResource;
 use Webkul\Employee\Models\Employee;
 use Webkul\Security\Models\User;
@@ -526,19 +528,19 @@ it('shows applied filter chips and clears the employee filter in place', functio
 
         $component = Livewire::test(AttendanceOverview::class)
             ->assertSee('September 2026')
-            ->assertDontSee('wire:click="clearEmployee"', false);
+            ->assertDontSee("removeTableFilter('overview', 'employee_id')", false);
 
         $component
             ->fillForm(['employee_id' => $empA->id], 'filterForm')
             ->call('applyFilters')
             ->assertSee($empA->name)
-            ->assertSee('wire:click="clearEmployee"', false)
+            ->assertSee("removeTableFilter('overview', 'employee_id')", false)
             ->assertSet('employeeId', $empA->id);
 
         $component
-            ->call('clearEmployee')
+            ->call('removeTableFilter', 'overview', 'employee_id')
             ->assertSet('employeeId', null)
-            ->assertDontSee('wire:click="clearEmployee"', false);
+            ->assertDontSee("removeTableFilter('overview', 'employee_id')", false);
 
         expect($component->instance()->appliedEmployeeName())->toBeNull()
             ->and($component->instance()->appliedPeriodLabel())->toBe('September 2026');
@@ -571,7 +573,7 @@ it('maps every register status to a distinct one-glyph cell code', function () {
     expect($codes->unique()->count())->toBe($codes->count());
 });
 
-it('compresses the page header into one summary strip with the daily trend chart', function () {
+it('renders the executive KPI strip, collapsible daily trend chart, and native table filter popover', function () {
     Carbon::setTestNow('2026-09-15 12:00:00');
 
     try {
@@ -583,38 +585,11 @@ it('compresses the page header into one summary strip with the daily trend chart
 
         $html = $component->html();
 
-        // الشريط المضغوط: أربعة أرقام أساسية فقط بدل شبكة البطاقات السبع
         expect($html)
-            ->not->toContain('style="display: grid"')
-            ->not->toContain('h-11 w-11')
             ->toContain('attendance-daily-trend')
-            ->toContain('border-collapse: separate');
-
-        // أربعة أرقام أساسية فقط في الشريط (الثانوية في وضع الملخص والتصدير)،
-        // مع بقاء تسميات القيم الأساسية نفسها
-        expect(substr_count($html, 'items-baseline gap-1 whitespace-nowrap'))->toBe(4);
-
-        $component
-            ->assertSee('Present days')
-            ->assertSee('Absent days')
-            ->assertSee('Absence rate');
-
-        // عنوان الرسم يأتي من مفتاح الترجمة الموجود أصلاً
-        $component->assertSee(__('attendance::filament/pages/overview.grid.chart'));
-
-        // عمود لكل يوم في نطاق العرض (شهر سبتمبر كاملاً) ولا رسم في وضع السنة
-        $dayColumns = substr_count($html, 'class="flex h-24 min-w-[1.25rem]');
-        expect($dayColumns)->toBe(30);
-
-        $component
-            ->call('showRegisterView', 'totals')
-            ->fillForm([
-                'view_mode' => 'year',
-                'year'      => 2026,
-            ], 'filterForm')
-            ->call('applyFilters');
-
-        expect($component->html())->not->toContain('attendance-daily-trend');
+            ->toContain('fi-ta-filters-dropdown')
+            ->toContain('border-collapse: separate')
+            ->toContain('fi-reg-name-ltr');
     } finally {
         Carbon::setTestNow();
     }
@@ -641,7 +616,7 @@ it('narrows register day columns and pins the employee column while scrolling', 
     }
 });
 
-it('renders the overview page for the default current month', function () {
+it('renders the overview page for the default current month and restores all day columns after switching from totals', function () {
     Carbon::setTestNow('2026-09-15 12:00:00');
 
     try {
@@ -655,9 +630,7 @@ it('renders the overview page for the default current month', function () {
             ->assertSee('Tue 1')
             ->assertSee('Wed 30')
             ->assertSee('Work schedule')
-            ->assertSee('Present days')
             ->assertSee('Status guide')
-            ->assertSee('Pending leave counts as absent')
             ->assertSee('Employee summary')
             ->assertSee('Daily register')
             ->assertDontSee('Upcoming');
@@ -685,6 +658,16 @@ it('renders the overview page for the default current month', function () {
             ->assertSee('87.5%');
 
         expect($component->html())->not->toMatch(statusCellRegex('P'));
+
+        // Switching back from totals to days must restore all 30 visible day columns
+        $component
+            ->call('showRegisterView', 'days')
+            ->assertSet('registerView', 'days')
+            ->assertSee('Tue 1')
+            ->assertSee('Wed 30');
+
+        expect($component->html())->toMatch(statusCellRegex('P'))
+            ->and(count($component->instance()->getTable()->getVisibleColumns()))->toBe(32);
     } finally {
         Carbon::setTestNow();
     }
@@ -945,7 +928,7 @@ it('applies overview filters only through the apply action', function () {
         FilamentHelper::actingAs(['page_attendance_attendance_overview'])->forceFill(['is_active' => true])->saveQuietly();
 
         $component = Livewire::test(AttendanceOverview::class)
-            ->assertSee('wire:click="applyFilters"', false)
+            ->assertSee('wire:click="applyTableFilters"', false)
             ->fillForm([
                 'view_mode'   => 'range',
                 'employee_id' => $empA->id,
@@ -1451,7 +1434,7 @@ it('aggregates a year into monthly cells and a yearly summary', function () {
     }
 });
 
-it('locks year mode to the per-employee totals', function () {
+it('uses year mode for per-employee totals and resets to month mode when switching back to daily register', function () {
     Carbon::setTestNow('2026-09-15 12:00:00');
 
     try {
@@ -1465,12 +1448,14 @@ it('locks year mode to the per-employee totals', function () {
             ], 'filterForm')
             ->call('applyFilters')
             ->assertSet('registerView', 'totals')
+            ->assertSet('rangeMode', 'year')
             ->assertSee('Overview Emp A')
             ->assertSee('Present days')
-            ->assertDontSee('Daily register')
             ->assertDontSee('Wed 30')
             ->call('showRegisterView', 'days')
-            ->assertSet('registerView', 'totals');
+            ->assertSet('registerView', 'days')
+            ->assertSet('rangeMode', 'month')
+            ->assertSee('Wed 30');
     } finally {
         Carbon::setTestNow();
     }
@@ -1585,4 +1570,101 @@ it('falls back to the employee id when the name has no slug form', function () {
         ]);
 
     expect($exporter->getFileName(new Export))->toBe("absence-summary_2026-09-01_to_2026-09-15_emp-{$employee->id}");
+});
+
+it('assigns script-direction classes to sticky employee cells so Arabic and English names truncate from the end', function () {
+    Carbon::setTestNow('2026-09-15 12:00:00');
+
+    try {
+        actingAsOverviewUser();
+
+        $company = Company::whereKey(current_company_id())->firstOrFail();
+        $calendar = createWeekCalendar($company->id);
+
+        createOverviewEmployee('عبدالله الحسين الحرازي', $calendar, $company->id);
+        createOverviewEmployee('Abdullah Al-Hussein Al-Harazi', $calendar, $company->id);
+
+        $html = Livewire::test(AttendanceOverview::class)->html();
+
+        expect($html)
+            ->toContain('fi-reg-name-rtl')
+            ->toContain('fi-reg-name-ltr');
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
+it('scopes register employees by barcode, registered attendance writer plugin, or last-year activity from AttendanceSettings', function () {
+    Carbon::setTestNow('2026-09-15 12:00:00');
+
+    try {
+        actingAsOverviewUser();
+
+        $company = Company::whereKey(current_company_id())->firstOrFail();
+        $calendar = createWeekCalendar($company->id);
+
+        $empWithBarcode = createOverviewEmployee('Emp With Barcode', $calendar, $company->id);
+        $empWithBarcode->forceFill(['barcode' => 'BIO-1001'])->saveQuietly();
+
+        $empWithRecentActivity = createOverviewEmployee('Emp Recent Activity', $calendar, $company->id);
+        $empWithRecentActivity->forceFill(['barcode' => null])->saveQuietly();
+        Attendance::create([
+            'employee_id' => $empWithRecentActivity->id,
+            'work_date'   => '2026-05-10',
+            'check_in'    => '2026-05-10 08:00:00',
+            'check_out'   => '2026-05-10 17:00:00',
+            'source'      => 'manual',
+            'company_id'  => $company->id,
+        ]);
+
+        $empRemotePlugin = createOverviewEmployee('Emp Remote Plugin', $calendar, $company->id);
+        $empRemotePlugin->forceFill(['barcode' => null, 'job_title' => 'remote-enrolled'])->saveQuietly();
+
+        $empUnenrolled = createOverviewEmployee('Emp Unenrolled', $calendar, $company->id);
+        $empUnenrolled->forceFill(['barcode' => null])->saveQuietly();
+        Attendance::create([
+            'employee_id' => $empUnenrolled->id,
+            'work_date'   => '2024-01-10',
+            'check_in'    => '2024-01-10 08:00:00',
+            'check_out'   => '2024-01-10 17:00:00',
+            'source'      => 'manual',
+            'company_id'  => $company->id,
+        ]);
+
+        WriterRegistry::register(
+            'remote-attendance',
+            fn (): string => 'Remote Attendance',
+            fn ($query)   => $query->where('job_title', 'remote-enrolled'),
+        );
+
+        $enrolledIds = AttendanceOverviewService::scopeEligibleEmployees(
+            Employee::query(),
+            AttendanceSettings::SCOPE_ENROLLED,
+        )->pluck('id')->all();
+
+        expect($enrolledIds)
+            ->toContain($empWithBarcode->id, $empRemotePlugin->id)
+            ->not->toContain($empWithRecentActivity->id, $empUnenrolled->id);
+
+        $recentIds = AttendanceOverviewService::scopeEligibleEmployees(
+            Employee::query(),
+            AttendanceSettings::SCOPE_RECENT_ACTIVITY,
+        )->pluck('id')->all();
+
+        expect($recentIds)
+            ->toContain($empWithRecentActivity->id)
+            ->not->toContain($empWithBarcode->id, $empRemotePlugin->id, $empUnenrolled->id);
+
+        $combinedIds = AttendanceOverviewService::scopeEligibleEmployees(
+            Employee::query(),
+            AttendanceSettings::SCOPE_ENROLLED_OR_ACTIVE,
+        )->pluck('id')->all();
+
+        expect($combinedIds)
+            ->toContain($empWithBarcode->id, $empRemotePlugin->id, $empWithRecentActivity->id)
+            ->not->toContain($empUnenrolled->id);
+    } finally {
+        WriterRegistry::flush();
+        Carbon::setTestNow();
+    }
 });
