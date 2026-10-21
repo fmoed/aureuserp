@@ -2,11 +2,14 @@
 
 return [
     'columns' => [
-        'employee' => 'Employee',
-        'date'     => 'Date',
-        'day'      => 'Day',
-        'status'   => 'Status',
-        'minutes'  => 'Minutes',
+        'employee'     => 'Employee',
+        'schedule'     => 'Schedule',
+        'workdays'     => 'Workdays',
+        'present'      => 'Present',
+        'absent'       => 'Absent',
+        'on-leave'     => 'Leaves',
+        'hours'        => 'Working Hours',
+        'absence-rate' => 'Absence Rate',
     ],
 
     'notification' => [

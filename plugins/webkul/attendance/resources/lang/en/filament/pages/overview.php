@@ -92,5 +92,5 @@ return [
 
     'export' => 'Absence summary (one row per employee)',
 
-    'export-detail' => 'Absence detail (one row per workday)',
+    'export-detail' => 'Attendance Register (Matrix Grid)',
 ];

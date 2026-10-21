@@ -5,11 +5,13 @@ namespace Webkul\Attendance\Services;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Schema;
 use Webkul\Attendance\Models\Attendance;
 use Webkul\Attendance\Models\AttendanceEvent;
 use Webkul\Attendance\Settings\AttendanceSettings;
 use Webkul\Attendance\Writers\WriterRegistry;
 use Webkul\Employee\Models\Employee;
+use Webkul\PluginManager\Package;
 use Webkul\Support\Models\Calendar;
 use Webkul\Support\Models\CalendarLeave;
 use Webkul\TimeOff\Enums\LeaveValidationType;
@@ -575,6 +577,10 @@ class AttendanceOverviewService
      */
     protected function leavesByEmployee(Collection $employees, string $from, string $to): Collection
     {
+        if (! Package::isPluginInstalled('time-off') || ! Schema::hasTable('time_off_leaves')) {
+            return collect();
+        }
+
         $companyIds = $employees->pluck('company_id')->filter()->unique()->values()->all();
 
         return Leave::query()
@@ -611,11 +617,13 @@ class AttendanceOverviewService
             ->where(fn ($query) => $query->whereNull('company_id')->orWhereIn('company_id', $companyIds))
             ->get();
 
-        $mandatory = LeaveMandatoryDay::query()
-            ->where('end_date', '>=', $from)
-            ->where('start_date', '<=', $to)
-            ->where(fn ($query) => $query->whereNull('company_id')->orWhereIn('company_id', $companyIds))
-            ->get();
+        $mandatory = (Package::isPluginInstalled('time-off') && Schema::hasTable('time_off_leave_mandatory_days'))
+            ? LeaveMandatoryDay::query()
+                ->where('end_date', '>=', $from)
+                ->where('start_date', '<=', $to)
+                ->where(fn ($query) => $query->whereNull('company_id')->orWhereIn('company_id', $companyIds))
+                ->get()
+            : collect();
 
         $map = collect();
 

@@ -4,6 +4,7 @@ namespace Webkul\Attendance\Filament\Exports\Concerns;
 
 use Filament\Actions\Exports\Models\Export;
 use Filament\Forms\Components\DatePicker;
+use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
 use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\Utilities\Get;
@@ -78,27 +79,91 @@ trait HasAbsenceExportOptions
         $maxRangeDays = static::exportRangeLimit();
 
         return [
+            Hidden::make('locale')
+                ->default(fn (): string => app()->getLocale()),
             Select::make('employee_id')
                 ->label(__('attendance::filament/exports/absence-report.options.employee'))
                 ->options(fn (): array => AttendanceOverviewService::scopeEligibleEmployees(Employee::query())->orderBy('name')->pluck('name', 'id')->all())
                 ->searchable()
                 ->nullable()
-                ->default(fn ($livewire): ?int => $livewire instanceof AttendanceOverview ? $livewire->employeeId : null),
+                ->default(function ($livewire): ?int {
+                    if ($livewire instanceof AttendanceOverview) {
+                        return $livewire->employeeId;
+                    }
+
+                    if (method_exists($livewire, 'getTableFilterState')) {
+                        $state = $livewire->getTableFilterState('employee_id');
+
+                        return filled($state['value'] ?? null) ? (int) $state['value'] : null;
+                    }
+
+                    return null;
+                }),
             DatePicker::make('date_from')
                 ->label(__('attendance::filament/exports/absence-report.options.date-from'))
                 ->required()
                 ->maxDate(Carbon::today()->toDateString())
-                ->default(fn ($livewire): string => $livewire instanceof AttendanceOverview && filled($livewire->dateFrom)
-                    ? $livewire->dateFrom
-                    : Carbon::today()->startOfMonth()->toDateString()),
+                ->default(function ($livewire): string {
+                    if ($livewire instanceof AttendanceOverview && filled($livewire->dateFrom)) {
+                        return $livewire->dateFrom;
+                    }
+
+                    if (method_exists($livewire, 'getTableFilterState')) {
+                        $workDate = $livewire->getTableFilterState('work_date');
+                        if (! empty($workDate['preset'])) {
+                            return match ($workDate['preset']) {
+                                'today'     => Carbon::today()->toDateString(),
+                                'this_week' => Carbon::now()->startOfWeek()->toDateString(),
+                                default     => Carbon::now()->startOfMonth()->toDateString(),
+                            };
+                        }
+
+                        if (! empty($workDate['work_date_from'])) {
+                            return $workDate['work_date_from'];
+                        }
+
+                        $punchedAt = $livewire->getTableFilterState('punched_at');
+                        if (! empty($punchedAt['punched_from'])) {
+                            return $punchedAt['punched_from'];
+                        }
+                    }
+
+                    return Carbon::today()->startOfMonth()->toDateString();
+                }),
             DatePicker::make('date_to')
                 ->label(__('attendance::filament/exports/absence-report.options.date-to'))
                 ->required()
                 ->afterOrEqual('date_from')
                 ->maxDate(Carbon::today()->toDateString())
-                ->default(fn ($livewire): string => $livewire instanceof AttendanceOverview && filled($livewire->dateTo)
-                    ? $livewire->dateTo
-                    : Carbon::today()->toDateString())
+                ->default(function ($livewire): string {
+                    if ($livewire instanceof AttendanceOverview && filled($livewire->dateTo)) {
+                        return $livewire->dateTo;
+                    }
+
+                    if (method_exists($livewire, 'getTableFilterState')) {
+                        $workDate = $livewire->getTableFilterState('work_date');
+                        if (! empty($workDate['preset'])) {
+                            $to = match ($workDate['preset']) {
+                                'today'     => Carbon::today()->toDateString(),
+                                'this_week' => Carbon::now()->endOfWeek()->toDateString(),
+                                default     => Carbon::now()->endOfMonth()->toDateString(),
+                            };
+
+                            return Carbon::parse($to)->min(Carbon::today())->toDateString();
+                        }
+
+                        if (! empty($workDate['work_date_to'])) {
+                            return $workDate['work_date_to'];
+                        }
+
+                        $punchedAt = $livewire->getTableFilterState('punched_at');
+                        if (! empty($punchedAt['punched_to'])) {
+                            return $punchedAt['punched_to'];
+                        }
+                    }
+
+                    return Carbon::today()->toDateString();
+                })
                 ->rules([function (Get $get) use ($maxRangeDays): \Closure {
                     return function (string $attribute, mixed $value, \Closure $fail) use ($get, $maxRangeDays): void {
                         $from = $get('date_from');

@@ -11,14 +11,13 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use League\Csv\Writer;
 use SplTempFileObject;
+use Webkul\Attendance\Filament\Tables\AttendanceRegisterTable;
 use Webkul\Attendance\Services\AttendanceOverviewService;
 
 /**
- * Writes one file per chunk of employees, fanning each employee out to
- * their workdays (date, day, standard status code, minutes) sorted by
- * employee then date — the daily register rows Filament's one-row-per-
- * record exporter cannot produce itself. Row counts are what progress
- * and the completion notification report on.
+ * Writes one matrix row per employee in the chunk: employee name,
+ * schedule, workdays, present, absent, on-leave, hours, absence rate, and
+ * the status label for each calendar day in the requested date range.
  */
 class ExportAbsenceDetailCsv extends ExportCsv
 {
@@ -33,23 +32,25 @@ class ExportAbsenceDetailCsv extends ExportCsv
 
         auth()->setUser($user);
 
+        $locale = $this->options['locale'] ?? app()->getLocale();
+        app()->setLocale($locale);
+        Carbon::setLocale($locale);
+
         try {
             $query = EloquentSerializeFacade::unserialize($this->query);
             $employees = $query->find($this->records);
 
-            $entries = app(AttendanceOverviewService::class)->daily(
-                collect($employees),
-                Carbon::parse($this->options['date_from']),
-                Carbon::parse($this->options['date_to']),
-            );
+            $from = Carbon::parse($this->options['date_from']);
+            $to = Carbon::parse($this->options['date_to']);
 
-            $labels = [
-                AttendanceOverviewService::STATUS_PRESENT          => __('attendance::filament/pages/overview.statuses.present'),
-                AttendanceOverviewService::STATUS_ABSENT           => __('attendance::filament/pages/overview.statuses.absent'),
-                AttendanceOverviewService::STATUS_ON_LEAVE         => __('attendance::filament/pages/overview.statuses.on-leave'),
-                AttendanceOverviewService::STATUS_ON_LEAVE_PENDING => __('attendance::filament/pages/overview.statuses.pending'),
-                AttendanceOverviewService::STATUS_HOLIDAY          => __('attendance::filament/pages/overview.statuses.holiday'),
-            ];
+            $matrix = app(AttendanceOverviewService::class)->register(collect($employees), $from, $to);
+
+            $dates = [];
+            $cursor = $from->copy();
+            while ($cursor->lte($to)) {
+                $dates[] = $cursor->toDateString();
+                $cursor->addDay();
+            }
 
             $csv = Writer::from(new SplTempFileObject);
             $csv->setDelimiter($this->exporter::getCsvDelimiter());
@@ -57,22 +58,27 @@ class ExportAbsenceDetailCsv extends ExportCsv
             $processedRows = 0;
             $successfulRows = 0;
 
-            $rows = $entries
-                ->map(fn (array $entry): array => [
-                    'employee' => (string) $entry['name'],
-                    'date'     => (string) $entry['date'],
-                    'day'      => Carbon::parse($entry['date'])->translatedFormat('l'),
-                    'status'   => $labels[$entry['status']] ?? $entry['status'],
-                    'minutes'  => $entry['minutes'] ?? '',
-                ])
-                ->sortBy(fn (array $row): string => $row['employee'].'|'.$row['date'])
-                ->values();
+            foreach ($matrix as $row) {
+                $hoursStr = sprintf('%02d:%02d', intdiv($row['totals']['minutes'], 60), $row['totals']['minutes'] % 60);
 
-            foreach ($rows as $row) {
-                $csv->insertOne(array_map(
-                    fn (string $column): mixed => $row[$column] ?? '',
-                    array_keys($this->columnMap),
-                ));
+                $line = [
+                    (string) $row['name'],
+                    (string) ($row['calendar'] ?? '—'),
+                    (string) $row['totals']['workdays'],
+                    (string) $row['totals']['present'],
+                    (string) $row['totals']['absent'],
+                    (string) $row['totals']['on_leave'],
+                    $hoursStr,
+                    $row['totals']['absence_rate'].'%',
+                ];
+
+                foreach ($dates as $date) {
+                    $status = (string) ($row['cells'][$date] ?? '');
+                    $label = AttendanceRegisterTable::statusLabel($status);
+                    $line[] = $label !== '' ? $label : '—';
+                }
+
+                $csv->insertOne($line);
 
                 $successfulRows++;
                 $processedRows++;

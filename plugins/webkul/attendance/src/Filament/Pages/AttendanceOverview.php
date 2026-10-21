@@ -931,7 +931,7 @@ class AttendanceOverview extends Page implements HasForms, HasTable
                 ->icon('heroicon-o-arrow-down-tray')
                 ->exporter(AbsenceDetailExporter::class)
                 ->job(PrepareAbsenceDetailExport::class)
-                ->maxRows(fn (): int => AbsenceDetailExporter::maxRows())
+                ->columnMapping(false)
                 ->visible(fn (): bool => $this->registerView !== self::REGISTER_TOTALS)
                 ->modifyQueryUsing(fn (Builder $query, array $options): Builder => AbsenceReportExporter::scopeQuery($query, $options)),
         ];
