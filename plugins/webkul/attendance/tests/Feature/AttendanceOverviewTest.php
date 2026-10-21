@@ -517,3 +517,77 @@ it('maps the week summary to export values matching the manual shape', function 
         '20%',
     ]);
 });
+
+it('applies overview filters only through the apply action', function () {
+    Carbon::setTestNow('2026-09-15 12:00:00');
+
+    try {
+        overviewPageDataset();
+
+        FilamentHelper::actingAs(['page_attendance_attendance_overview'])->forceFill(['is_active' => true])->saveQuietly();
+
+        Livewire::test(AttendanceOverview::class)
+            ->assertSee('wire:click="applyFilters"', false)
+            ->fillForm([
+                'employee_id' => Employee::where('name', 'Overview Emp A')->firstOrFail()->id,
+                'date_from'   => '2026-09-07',
+                'date_to'     => '2026-09-13',
+            ], 'filterForm')
+            ->assertSee('Sick Test Leave')
+            ->call('applyFilters')
+            ->assertSee('Annual Test Leave')
+            ->assertDontSee('Sick Test Leave');
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
+it('paginates daily entries like every other list', function () {
+    actingAsOverviewUser();
+
+    $company = Company::query()->orderBy('id')->firstOrFail();
+    $calendar = createWeekCalendar($company->id);
+    $employee = createOverviewEmployee('Overview Emp P', $calendar, $company->id);
+
+    $to = Carbon::today();
+    $from = $to->copy()->subDays(41);
+    $first = null;
+    $last = null;
+    $index = 0;
+
+    for ($day = $from->copy(); $day->lte($to); $day->addDay()) {
+        if ($day->isWeekend()) {
+            continue;
+        }
+
+        $checkIn = $day->format('Y-m-d').sprintf(' 08:%02d:00', $index);
+
+        Attendance::create([
+            'employee_id' => $employee->id,
+            'work_date'   => $day->toDateString(),
+            'check_in'    => $checkIn,
+            'check_out'   => $day->format('Y-m-d').sprintf(' 16:%02d:00', $index),
+            'source'      => 'manual',
+            'company_id'  => $company->id,
+        ]);
+
+        $first ??= $checkIn;
+        $last = $checkIn;
+        $index++;
+    }
+
+    Livewire::test(AttendanceOverview::class)
+        ->fillForm([
+            'employee_id' => $employee->id,
+            'date_from'   => $from->toDateString(),
+            'date_to'     => $to->toDateString(),
+        ], 'filterForm')
+        ->call('applyFilters')
+        ->assertSee($first)
+        ->assertDontSee($last)
+        ->call('nextPage')
+        ->assertSee($last)
+        ->assertDontSee($first)
+        ->call('applyFilters')
+        ->assertSee($first);
+});

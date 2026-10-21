@@ -15,6 +15,7 @@ use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Webkul\Attendance\Filament\Exports\AbsenceReportExporter;
@@ -42,14 +43,20 @@ class AttendanceOverview extends Page implements HasForms
 
     public string $activeTab = 'daily';
 
-    /** @var list<array{employee_id: int, name: string, date: string, status: string, leave_label: ?string, half_day: bool, check_in: ?string, check_out: ?string, minutes: ?int}> */
-    public array $entries = [];
+    public int $dailyPage = 1;
 
-    /** @var list<string> */
-    public array $gridDays = [];
+    public int $dailyPerPage = 25;
 
-    /** @var array<int, array{name: string, cells: array<string, string>}> */
-    public array $grid = [];
+    public const DAILY_PER_PAGE_OPTIONS = [10, 25, 50];
+
+    /**
+     * Within-request memo for derived data. These props stay out of the
+     * Livewire snapshot on purpose: entries for a full range would bloat
+     * every roundtrip payload, while filter inputs re-derive them cheaply.
+     *
+     * @var list<array{employee_id: int, name: string, date: string, status: string, leave_label: ?string, half_day: bool, check_in: ?string, check_out: ?string, minutes: ?int}>|null
+     */
+    private ?array $entriesMemo = null;
 
     public static function getSlug(?Panel $panel = null): string
     {
@@ -108,13 +115,11 @@ class AttendanceOverview extends Page implements HasForms
                     ->label(__('attendance::filament/pages/overview.form.employee'))
                     ->options(fn (): array => Employee::query()->orderBy('name')->pluck('name', 'id')->all())
                     ->searchable()
-                    ->placeholder(__('attendance::filament/pages/overview.form.all-employees'))
-                    ->live(),
+                    ->placeholder(__('attendance::filament/pages/overview.form.all-employees')),
                 DatePicker::make('date_from')
                     ->label(__('attendance::filament/pages/overview.form.date-from'))
                     ->required()
-                    ->maxDate(Carbon::today()->toDateString())
-                    ->live(),
+                    ->maxDate(Carbon::today()->toDateString()),
                 DatePicker::make('date_to')
                     ->label(__('attendance::filament/pages/overview.form.date-to'))
                     ->required()
@@ -134,8 +139,7 @@ class AttendanceOverview extends Page implements HasForms
                                 ]));
                             }
                         };
-                    }])
-                    ->live(),
+                    }]),
             ])
             ->columns(4);
     }
@@ -147,21 +151,76 @@ class AttendanceOverview extends Page implements HasForms
         $this->employeeId = $data['employee_id'] ?? null;
         $this->dateFrom = $data['date_from'];
         $this->dateTo = $data['date_to'];
+        $this->dailyPage = 1;
+        $this->entriesMemo = null;
+    }
 
-        $service = app(AttendanceOverviewService::class);
+    public function updatedDailyPerPage(): void
+    {
+        $this->dailyPage = 1;
+    }
 
-        $entries = $service->daily(
+    public function nextPage(string $pageName = 'page'): void
+    {
+        $this->dailyPage++;
+    }
+
+    public function previousPage(string $pageName = 'page'): void
+    {
+        $this->dailyPage = max(1, $this->dailyPage - 1);
+    }
+
+    public function gotoPage(int $page, string $pageName = 'page'): void
+    {
+        $this->dailyPage = max(1, $page);
+    }
+
+    /**
+     * @return list<array{employee_id: int, name: string, date: string, status: string, leave_label: ?string, half_day: bool, check_in: ?string, check_out: ?string, minutes: ?int}>
+     */
+    public function getEntries(): array
+    {
+        return $this->entriesMemo ??= app(AttendanceOverviewService::class)->daily(
             $this->filteredEmployees(),
             Carbon::parse($this->dateFrom),
             Carbon::parse($this->dateTo),
-        );
+        )->all();
+    }
 
-        $this->entries = $entries->all();
-        $this->gridDays = $entries->pluck('date')->unique()->sort()->values()->all();
-        $this->grid = $entries->groupBy('employee_id')->map(fn ($rows): array => [
+    /**
+     * @return list<string>
+     */
+    public function getGridDays(): array
+    {
+        return collect($this->getEntries())->pluck('date')->unique()->sort()->values()->all();
+    }
+
+    /**
+     * @return array<int, array{name: string, cells: array<string, string>}>
+     */
+    public function getGrid(): array
+    {
+        return collect($this->getEntries())->groupBy('employee_id')->map(fn ($rows): array => [
             'name'  => $rows->first()['name'],
             'cells' => $rows->mapWithKeys(fn (array $row): array => [$row['date'] => $this->cellLetter($row['status'])])->all(),
         ])->all();
+    }
+
+    /**
+     * Daily entries paginated like every other list (25 by default).
+     */
+    public function getDailyPaginator(): LengthAwarePaginator
+    {
+        $total = count($this->getEntries());
+        $page = $total === 0 ? 1 : min($this->dailyPage, (int) ceil($total / $this->dailyPerPage));
+
+        return new LengthAwarePaginator(
+            array_slice($this->getEntries(), ($page - 1) * $this->dailyPerPage, $this->dailyPerPage),
+            $total,
+            $this->dailyPerPage,
+            $page,
+            ['path' => request()->url(), 'pageName' => 'page'],
+        );
     }
 
     protected function getHeaderActions(): array
@@ -210,23 +269,23 @@ class AttendanceOverview extends Page implements HasForms
         return match ($entry['status']) {
             AttendanceOverviewService::STATUS_PRESENT => [
                 'label' => __('attendance::filament/pages/overview.statuses.present'),
-                'color' => '#22c55e',
+                'color' => 'success',
             ],
             AttendanceOverviewService::STATUS_ABSENT => [
                 'label' => __('attendance::filament/pages/overview.statuses.absent'),
-                'color' => '#ef4444',
+                'color' => 'danger',
             ],
             AttendanceOverviewService::STATUS_ON_LEAVE => [
                 'label' => $entry['leave_label'].($entry['half_day'] ? ' · '.__('attendance::filament/pages/overview.statuses.half-day') : ''),
-                'color' => '#3b82f6',
+                'color' => 'info',
             ],
             AttendanceOverviewService::STATUS_ON_LEAVE_PENDING => [
                 'label' => $entry['leave_label'].' · '.__('attendance::filament/pages/overview.statuses.pending'),
-                'color' => '#f59e0b',
+                'color' => 'warning',
             ],
             default => [
                 'label' => (string) $entry['leave_label'],
-                'color' => '#6b7280',
+                'color' => 'gray',
             ],
         };
     }
