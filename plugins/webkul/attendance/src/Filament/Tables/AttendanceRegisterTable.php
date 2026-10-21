@@ -10,6 +10,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Webkul\Attendance\Filament\Pages\AttendanceOverview;
 use Webkul\Attendance\Services\AttendanceOverviewService;
+use Webkul\Employee\Filament\Resources\EmployeeResource;
 use Webkul\Employee\Models\Employee;
 
 /**
@@ -32,6 +33,10 @@ class AttendanceRegisterTable
             ->size(TextSize::Small)
             ->width('180px')
             ->searchable()
+            ->url(fn (Employee $record): ?string => auth()->user()?->can('view', $record)
+                ? EmployeeResource::getUrl('view', ['record' => $record])
+                : null)
+            ->tooltip(fn (Employee $record): ?string => $record->job_title ?: null)
             ->extraHeaderAttributes(['class' => 'fi-reg-sticky'])
             ->extraCellAttributes(['class' => 'fi-reg-sticky']);
 
