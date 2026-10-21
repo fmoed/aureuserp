@@ -15,6 +15,7 @@ use Webkul\Attendance\Filament\Pages\AttendanceOverview;
 use Webkul\Attendance\Filament\Resources\AttendanceEventResource;
 use Webkul\Attendance\Filament\Resources\AttendanceResource;
 use Webkul\Attendance\Filament\Tables\AttendanceRegisterTable;
+use Webkul\Attendance\Filament\Widgets\AttendanceStatsWidget;
 use Webkul\Attendance\Models\Attendance;
 use Webkul\Attendance\Services\AttendanceOverviewService;
 use Webkul\Employee\Filament\Resources\EmployeeResource;
@@ -423,7 +424,7 @@ it('measures range length in days with a ninety-three-day limit', function () {
 it('registers the overview page with slug, group and shield discovery', function () {
     expect(AttendanceOverview::getSlug())->toBe('attendance/overview')
         ->and(AttendanceOverview::getNavigationGroup())->toBe(NavigationGroup::Attendance)
-        ->and(AttendanceOverview::getNavigationLabel())->toBe('Monthly Attendance Register')
+        ->and(AttendanceOverview::getNavigationLabel())->toBe('Attendance Register')
         ->and(FilamentShield::getPages())->toHaveKey(AttendanceOverview::class);
 });
 
@@ -432,6 +433,20 @@ it('locks the attendance navigation order: register, records, raw events, settin
         ->and(AttendanceResource::getNavigationSort())->toBe(2)
         ->and(AttendanceEventResource::getNavigationSort())->toBe(3)
         ->and(Configurations::getNavigationSort())->toBe(4);
+});
+
+it('keeps the stats widget compact on phones with a responsive grid', function () {
+    $widget = app(AttendanceStatsWidget::class);
+
+    $method = new ReflectionMethod($widget, 'getColumns');
+    $method->setAccessible(true);
+
+    expect($method->invoke($widget))->toBe([
+        'default' => 2,
+        'sm'      => 2,
+        'md'      => 4,
+        'lg'      => 4,
+    ]);
 });
 
 it('configures the register table with the shared pagination whitelist', function () {

@@ -51,6 +51,17 @@ class AttendanceStatsWidget extends BaseWidget
         return __('attendance::filament/widgets/attendance-stats.heading');
     }
 
+    protected function getColumns(): int|array|null
+    {
+        // هاتف: شبكة 2×2 بدل أربع بطاقات عمودية؛ شاشات متوسطة فأعلى: صف واحد
+        return [
+            'default' => 2,
+            'sm'      => 2,
+            'md'      => 4,
+            'lg'      => 4,
+        ];
+    }
+
     protected function getStats(): array
     {
         $stats = static::monthlyStats();

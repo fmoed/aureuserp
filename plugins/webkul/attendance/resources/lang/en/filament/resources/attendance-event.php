@@ -24,12 +24,15 @@ return [
         ],
 
         'filters' => [
-            'employee'       => 'Employee',
-            'source'         => 'Source',
-            'punched-at'     => 'Punch Date',
-            'date-from'      => 'From',
-            'date-to'        => 'To',
-            'range-too-wide' => 'The range must not exceed :days days.',
+            'linkage'           => 'Linkage',
+            'linkage-paired'    => 'Paired',
+            'linkage-unpaired'  => 'Unpaired',
+            'employee'          => 'Employee',
+            'source'            => 'Source',
+            'punched-at'        => 'Punch Date',
+            'date-from'         => 'From',
+            'date-to'           => 'To',
+            'range-too-wide'    => 'The range must not exceed :days days.',
         ],
 
         'toolbar-actions' => [

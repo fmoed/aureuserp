@@ -1,10 +1,10 @@
 <?php
 
 return [
-    'title' => 'Registro mensal de presença',
+    'title' => 'Registro de presença',
 
     'navigation' => [
-        'title' => 'Registro mensal de presença',
+        'title' => 'Registro de presença',
     ],
 
     'form' => [

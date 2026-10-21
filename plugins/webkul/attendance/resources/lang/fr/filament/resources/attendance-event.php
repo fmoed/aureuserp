@@ -24,12 +24,15 @@ return [
         ],
 
         'filters' => [
-            'employee'       => 'Employé',
-            'source'         => 'Source',
-            'punched-at'     => 'Date de pointage',
-            'date-from'      => 'Du',
-            'date-to'        => 'Au',
-            'range-too-wide' => 'La plage ne doit pas dépasser :days jours.',
+            'linkage'           => 'Liaison',
+            'linkage-paired'    => 'Lié',
+            'linkage-unpaired'  => 'Non lié',
+            'employee'          => 'Employé',
+            'source'            => 'Source',
+            'punched-at'        => 'Date de pointage',
+            'date-from'         => 'Du',
+            'date-to'           => 'Au',
+            'range-too-wide'    => 'La plage ne doit pas dépasser :days jours.',
         ],
 
         'toolbar-actions' => [

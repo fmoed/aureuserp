@@ -1,10 +1,10 @@
 <?php
 
 return [
-    'title' => 'Monthly Attendance Register',
+    'title' => 'Attendance Register',
 
     'navigation' => [
-        'title' => 'Monthly Attendance Register',
+        'title' => 'Attendance Register',
     ],
 
     'form' => [

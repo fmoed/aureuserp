@@ -8,6 +8,7 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Webkul\Attendance\Filament\Exports\AttendanceEventExporter;
 use Webkul\Attendance\Models\Attendance;
@@ -119,6 +120,19 @@ class AttendanceEventsTable
                     ->placeholder('—'),
             ])
             ->filters([
+                SelectFilter::make('linkage')
+                    ->label(__('attendance::filament/resources/attendance-event.table.filters.linkage'))
+                    ->options([
+                        'paired'   => __('attendance::filament/resources/attendance-event.table.filters.linkage-paired'),
+                        'unpaired' => __('attendance::filament/resources/attendance-event.table.filters.linkage-unpaired'),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return match ($data['value'] ?? null) {
+                            'paired'   => $query->whereNotNull('attendance_id'),
+                            'unpaired' => $query->whereNull('attendance_id'),
+                            default    => $query,
+                        };
+                    }),
                 SelectFilter::make('employee_id')
                     ->label(__('attendance::filament/resources/attendance-event.table.filters.employee'))
                     ->relationship('employee', 'name')
