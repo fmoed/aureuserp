@@ -1,0 +1,30 @@
+{
+    "name": "webkul/biometric-attendance",
+    "description": "ZKTeco biometric device integration (Phase 1: connection test + raw punch reading)",
+    "authors": [
+        {
+            "name": "AureusERP",
+            "email": "support@aureuserp.in"
+        }
+    ],
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Webkul\\BiometricAttendance\\BiometricAttendanceServiceProvider"
+            ],
+            "aliases": {}
+        }
+    },
+    "autoload": {
+        "psr-4": {
+            "Webkul\\BiometricAttendance\\": "src/",
+            "Webkul\\BiometricAttendance\\Database\\Factories\\": "database/factories/",
+            "Webkul\\BiometricAttendance\\Database\\Seeders\\": "database/seeders/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Webkul\\BiometricAttendance\\Tests\\": "tests/"
+        }
+    }
+}
