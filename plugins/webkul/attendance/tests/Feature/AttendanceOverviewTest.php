@@ -101,12 +101,13 @@ function createLeave(Employee $employee, LeaveType $type, string $from, string $
 }
 
 /**
- * Matches a table cell (fi-ta-text wrapper) carrying the given status word,
+ * Matches a register cell's exact text (fi-ta-text-item wrapper, with the
+ * x-tooltip attribute on its inner span holding the full status word),
  * so legend badges (fi-badge) and column headers never satisfy the assert.
  */
 function statusCellRegex(string $word): string
 {
-    return '/fi-ta-text[^"]*">\s*'.preg_quote($word, '/').'\s*</';
+    return '/fi-ta-text-item[^>]*>\s*<span[^>]*>\s*'.preg_quote($word, '/').'\s*</';
 }
 
 /**
@@ -441,6 +442,51 @@ it('configures the register table with the shared pagination whitelist', functio
         ->and($page->getDefaultTableRecordsPerPageSelectOption())->toBe(25);
 });
 
+it('maps every register status to a distinct one-glyph cell code', function () {
+    expect(AttendanceRegisterTable::statusShortLabel(AttendanceOverviewService::STATUS_PRESENT))->toBe('P')
+        ->and(AttendanceRegisterTable::statusShortLabel(AttendanceOverviewService::STATUS_ABSENT))->toBe('A')
+        ->and(AttendanceRegisterTable::statusShortLabel(AttendanceOverviewService::STATUS_ON_LEAVE))->toBe('L')
+        ->and(AttendanceRegisterTable::statusShortLabel(AttendanceOverviewService::STATUS_HALF_DAY))->toBe('½')
+        ->and(AttendanceRegisterTable::statusShortLabel(AttendanceOverviewService::STATUS_PENDING))->toBe('?')
+        ->and(AttendanceRegisterTable::statusShortLabel(AttendanceOverviewService::STATUS_HOLIDAY))->toBe('H')
+        ->and(AttendanceRegisterTable::statusShortLabel(AttendanceOverviewService::STATUS_WEEKLY_OFF))->toBe('W')
+        ->and(AttendanceRegisterTable::statusShortLabel(AttendanceOverviewService::STATUS_FUTURE))->toBe('')
+        ->and(AttendanceRegisterTable::statusShortLabel(''))->toBe('');
+
+    $codes = collect([
+        AttendanceOverviewService::STATUS_PRESENT,
+        AttendanceOverviewService::STATUS_ABSENT,
+        AttendanceOverviewService::STATUS_ON_LEAVE,
+        AttendanceOverviewService::STATUS_HALF_DAY,
+        AttendanceOverviewService::STATUS_PENDING,
+        AttendanceOverviewService::STATUS_HOLIDAY,
+        AttendanceOverviewService::STATUS_WEEKLY_OFF,
+    ])->map(fn (string $status): string => AttendanceRegisterTable::statusShortLabel($status));
+
+    expect($codes->unique()->count())->toBe($codes->count());
+});
+
+it('narrows register day columns and pins the employee column while scrolling', function () {
+    Carbon::setTestNow('2026-09-15 12:00:00');
+
+    try {
+        actingAsOverviewUser();
+
+        $component = Livewire::test(AttendanceOverview::class);
+        $columns = collect($component->instance()->getTable()->getColumns());
+
+        $dayColumn = $columns->first(fn ($column): bool => $column->getName() === 'cells.2026-09-01');
+        $scheduleColumn = $columns->first(fn ($column): bool => $column->getName() === 'schedule');
+
+        expect($dayColumn)->not->toBeNull()
+            ->and($dayColumn->getWidth())->toBe('2.75rem')
+            ->and($scheduleColumn?->getVisibleFrom())->toBe('md')
+            ->and($component->html())->toContain('fi-reg-sticky');
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
 it('renders the overview page for the default current month', function () {
     Carbon::setTestNow('2026-09-15 12:00:00');
 
@@ -464,20 +510,27 @@ it('renders the overview page for the default current month', function () {
 
         $html = $component->html();
 
-        expect($html)->toMatch(statusCellRegex('Present'))
-            ->toMatch(statusCellRegex('Absent'))
-            ->toMatch(statusCellRegex('On leave'))
-            ->toMatch(statusCellRegex('Half day'))
-            ->toMatch(statusCellRegex('Holiday'))
-            ->toMatch(statusCellRegex('Pending'))
-            ->toMatch(statusCellRegex('Weekly off'))
+        expect($html)->toMatch(statusCellRegex('P'))
+            ->toMatch(statusCellRegex('A'))
+            ->toMatch(statusCellRegex('L'))
+            ->toMatch(statusCellRegex('½'))
+            ->toMatch(statusCellRegex('H'))
+            ->toMatch(statusCellRegex('?'))
+            ->toMatch(statusCellRegex('W'))
+            ->toContain("content: 'Present'")
+            ->toContain("content: 'Absent'")
+            ->toContain("content: 'On leave'")
+            ->toContain("content: 'Half day'")
+            ->toContain("content: 'Holiday'")
+            ->toContain("content: 'Pending'")
+            ->toContain("content: 'Weekly off'")
             ->not->toContain('87.5%');
 
         $component
             ->call('showRegisterView', 'totals')
             ->assertSee('87.5%');
 
-        expect($component->html())->not->toMatch(statusCellRegex('Present'));
+        expect($component->html())->not->toMatch(statusCellRegex('P'));
     } finally {
         Carbon::setTestNow();
     }
@@ -521,7 +574,7 @@ it('filters the overview by employee and range', function () {
             ->assertCanSeeTableRecords([$empA])
             ->assertCanNotSeeTableRecords([$empB]);
 
-        expect($component->html())->toMatch(statusCellRegex('Absent'));
+        expect($component->html())->toMatch(statusCellRegex('A'));
     } finally {
         Carbon::setTestNow();
     }
@@ -568,12 +621,12 @@ it('renders colored status words for an applied date range', function () {
 
         $html = $component->html();
 
-        expect($html)->toMatch(statusCellRegex('Present'))
-            ->toMatch(statusCellRegex('Absent'))
-            ->toMatch(statusCellRegex('On leave'))
-            ->toMatch(statusCellRegex('Half day'))
-            ->toMatch(statusCellRegex('Holiday'))
-            ->toMatch(statusCellRegex('Weekly off'));
+        expect($html)->toMatch(statusCellRegex('P'))
+            ->toMatch(statusCellRegex('A'))
+            ->toMatch(statusCellRegex('L'))
+            ->toMatch(statusCellRegex('½'))
+            ->toMatch(statusCellRegex('H'))
+            ->toMatch(statusCellRegex('W'));
     } finally {
         Carbon::setTestNow();
     }
@@ -751,7 +804,7 @@ it('applies overview filters only through the apply action', function () {
             ->assertCanSeeTableRecords([$empA])
             ->assertCanNotSeeTableRecords([$empB]);
 
-        expect($component->html())->toMatch(statusCellRegex('Absent'));
+        expect($component->html())->toMatch(statusCellRegex('A'));
     } finally {
         Carbon::setTestNow();
     }
@@ -1193,9 +1246,11 @@ it('formats day cell columns from the raw display status', function () {
             ->first(fn (object $column): bool => $column->getName() === 'cells.2026-09-07');
 
         expect($column)->not->toBeNull()
-            ->and($column->formatState('present'))->toBe('Present')
-            ->and($column->formatState('weekly_off'))->toBe('Weekly off')
+            ->and($column->formatState('present'))->toBe('P')
+            ->and($column->formatState('weekly_off'))->toBe('W')
             ->and($column->formatState('future'))->toBe('')
+            ->and($column->getTooltip('present'))->toBe('Present')
+            ->and($column->getTooltip('future'))->toBeNull()
             ->and($column->getColor('present'))->toBe('success')
             ->and($column->getColor('absent'))->toBe('danger');
     } finally {

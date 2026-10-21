@@ -111,10 +111,34 @@
     @endif
 
     {{-- جدول السجل: تخطيط ثابت مع العروض الصريحة للأعمدة، لأن table-auto
-        يوزع المساحة الفارغة على كل الأعمدة فيتمدد الرقم بعيدًا عن ترويسته --}}
+        يوزع المساحة الفارغة على كل الأعمدة فيتمدد الرقم بعيدًا عن ترويسته.
+        عمود الموظف مثبت أفقياً (RTL/LTR عبر الخصائص المنطقية) حتى لا
+        يضيع سياق الصف أثناء تمرير أعمدة الأيام. --}}
     <style>
         .attendance-register-table .fi-ta-table {
             table-layout: fixed;
+        }
+
+        .attendance-register-table .fi-reg-sticky {
+            position: sticky;
+            inset-inline-start: 0;
+            z-index: 1;
+            border-inline-end: 1px solid rgb(229 231 235);
+            background: #fff;
+        }
+
+        .attendance-register-table th.fi-reg-sticky {
+            z-index: 2;
+            background: #f9fafb;
+        }
+
+        .dark .attendance-register-table .fi-reg-sticky {
+            background: #111827;
+            border-inline-end-color: rgb(255 255 255 / 0.1);
+        }
+
+        .dark .attendance-register-table th.fi-reg-sticky {
+            background: rgb(255 255 255 / 0.05);
         }
     </style>
     <div class="attendance-register-table">
