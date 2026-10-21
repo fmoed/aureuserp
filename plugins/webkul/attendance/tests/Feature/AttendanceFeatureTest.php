@@ -4,7 +4,6 @@ require_once __DIR__.'/../../../support/tests/Helpers/TestBootstrapHelper.php';
 require_once __DIR__.'/../../../support/tests/Helpers/FilamentHelper.php';
 
 use Filament\Actions\Exports\Models\Export;
-use Illuminate\Database\QueryException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Gate;
 use Livewire\Livewire;
@@ -65,31 +64,19 @@ it('reports null worked minutes when the day is still open', function () {
     expect($attendance->worked_minutes)->toBeNull();
 });
 
-it('allows one row per employee, work date and source', function () {
+it('allows several rows per employee and work date at the database level', function () {
     $employee = Employee::factory()->create();
 
-    Attendance::create([
-        'employee_id' => $employee->id,
-        'work_date'   => '2026-09-24',
-        'check_in'    => '2026-09-24 08:00:00',
-        'source'      => 'manual',
-    ]);
+    foreach ([['manual', '08:00:00'], ['biometric-attendance', '08:10:00'], ['biometric-attendance', '20:10:00']] as [$source, $time]) {
+        Attendance::create([
+            'employee_id' => $employee->id,
+            'work_date'   => '2026-09-24',
+            'check_in'    => "2026-09-24 {$time}",
+            'source'      => $source,
+        ]);
+    }
 
-    Attendance::create([
-        'employee_id' => $employee->id,
-        'work_date'   => '2026-09-24',
-        'check_in'    => '2026-09-24 08:10:00',
-        'source'      => 'biometric-attendance',
-    ]);
-
-    expect(Attendance::where('employee_id', $employee->id)->count())->toBe(2);
-
-    expect(fn () => Attendance::create([
-        'employee_id' => $employee->id,
-        'work_date'   => '2026-09-24',
-        'check_in'    => '2026-09-24 08:20:00',
-        'source'      => 'manual',
-    ]))->toThrow(QueryException::class);
+    expect(Attendance::where('employee_id', $employee->id)->count())->toBe(3);
 });
 
 it('maps the attendance policy', function () {
@@ -369,7 +356,7 @@ it('validates the create form: duplicate, out-of-day check-in and overlong shift
             'employee_id' => Employee::factory()->create(['user_id' => User::factory()])->id,
             'work_date'   => $today,
             'check_in'    => $today.' 00:00:00',
-            'check_out'   => $today.' 17:00:00',
+            'check_out'   => $today.' 16:00:00',
         ])
         ->call('create')
         ->assertHasNoFormErrors();
@@ -762,7 +749,7 @@ it('keeps the row identity on edit even when the request forges it', function ()
         ->and($attendance->getRawOriginal('check_in'))->toBe($rawCheckIn);
 });
 
-it('rejects a check-out outside the work date', function () {
+it('accepts a next-day check-out within 16 hours but rejects longer shifts', function () {
     FilamentHelper::actingAs([
         'view_any_attendance_attendance',
         'create_attendance_attendance',
@@ -777,13 +764,27 @@ it('rejects a check-out outside the work date', function () {
         ->fillForm([
             'employee_id' => $employee->id,
             'work_date'   => $today,
-            'check_in'    => $today.' 22:00:00',
+            'check_in'    => $today.' 13:00:00',
+            'check_out'   => $tomorrow.' 02:00:00',
+        ])
+        ->call('create')
+        ->assertHasNoFormErrors();
+
+    expect(Attendance::where('employee_id', $employee->id)->count())->toBe(1);
+
+    $otherEmployee = Employee::factory()->create(['user_id' => User::factory()]);
+
+    Livewire::test(CreateAttendance::class)
+        ->fillForm([
+            'employee_id' => $otherEmployee->id,
+            'work_date'   => $today,
+            'check_in'    => $today.' 13:00:00',
             'check_out'   => $tomorrow.' 06:00:00',
         ])
         ->call('create')
-        ->assertHasFormErrors(['check_out']);
+        ->assertHasFormErrors(['check_out' => __('attendance::filament/resources/attendance.form.check-out-not-in-work-date')]);
 
-    expect(Attendance::where('employee_id', $employee->id)->count())->toBe(0);
+    expect(Attendance::where('employee_id', $otherEmployee->id)->count())->toBe(0);
 });
 
 it('fills the work date from the employee timezone when picking an employee', function () {
@@ -838,7 +839,7 @@ it('completes an open row through the checkout action storing UTC', function () 
         ->and($attendance->worked_minutes)->toBe(480);
 });
 
-it('rejects a next-day check-out through the checkout action', function () {
+it('accepts a next-day check-out within 16 hours through the checkout action', function () {
     FilamentHelper::actingAs([
         'view_any_attendance_attendance',
         'update_attendance_attendance',
@@ -858,7 +859,32 @@ it('rejects a next-day check-out through the checkout action', function () {
 
     Livewire::test(ListAttendances::class)
         ->callTableAction('add_checkout', $attendance, data: ['check_out' => $tomorrow.' 06:00:00'])
-        ->assertHasErrors(['check_out']);
+        ->assertHasNoErrors();
+
+    expect($attendance->refresh()->getRawOriginal('check_out'))->toBe($tomorrow.' 06:00:00');
+});
+
+it('rejects a check-out more than 16 hours after check-in through the checkout action', function () {
+    FilamentHelper::actingAs([
+        'view_any_attendance_attendance',
+        'update_attendance_attendance',
+    ]);
+
+    $employee = Employee::factory()->create(['user_id' => User::factory()]);
+
+    $today = Carbon::today()->toDateString();
+    $tomorrow = Carbon::tomorrow()->toDateString();
+
+    $attendance = Attendance::create([
+        'employee_id' => $employee->id,
+        'work_date'   => $today,
+        'check_in'    => $today.' 08:00:00',
+        'source'      => 'manual',
+    ]);
+
+    Livewire::test(ListAttendances::class)
+        ->callTableAction('add_checkout', $attendance, data: ['check_out' => $tomorrow.' 02:00:00'])
+        ->assertHasErrors(['check_out' => __('attendance::filament/resources/attendance.form.check-out-not-in-work-date')]);
 
     expect($attendance->refresh()->check_out)->toBeNull();
 });
