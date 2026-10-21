@@ -2,17 +2,16 @@
 
 namespace Webkul\BiometricAttendance\Filament\Resources;
 
-use Filament\Panel;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Tables\Table;
+use Webkul\Attendance\Filament\Clusters\Configurations;
 use Webkul\BiometricAttendance\Filament\Resources\DeviceResource\Pages\CreateDevice;
 use Webkul\BiometricAttendance\Filament\Resources\DeviceResource\Pages\EditDevice;
 use Webkul\BiometricAttendance\Filament\Resources\DeviceResource\Pages\ListDevices;
 use Webkul\BiometricAttendance\Filament\Resources\DeviceResource\Schemas\DeviceForm;
 use Webkul\BiometricAttendance\Filament\Resources\DeviceResource\Tables\DevicesTable;
 use Webkul\BiometricAttendance\Models\Device;
-use Webkul\Employee\Filament\Clusters\Configurations;
 
 class DeviceResource extends Resource
 {
@@ -34,11 +33,6 @@ class DeviceResource extends Resource
         return __('biometric-attendance::filament/resources/device.navigation.title');
     }
 
-    public static function getNavigationGroup(): string
-    {
-        return __('biometric-attendance::filament/resources/device.navigation.group');
-    }
-
     public static function getGloballySearchableAttributes(): array
     {
         return ['name', 'host'];
@@ -52,11 +46,6 @@ class DeviceResource extends Resource
     public static function table(Table $table): Table
     {
         return DevicesTable::configure($table);
-    }
-
-    public static function getSlug(?Panel $panel = null): string
-    {
-        return 'biometric-attendance/devices';
     }
 
     public static function getPages(): array

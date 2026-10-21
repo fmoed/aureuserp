@@ -39,6 +39,7 @@ class BiometricAttendanceServiceProvider extends PackageServiceProvider
             ])
             ->hasDependencies([
                 'employees',
+                'attendance',
             ])
             ->runsMigrations()
             ->hasCommands([
