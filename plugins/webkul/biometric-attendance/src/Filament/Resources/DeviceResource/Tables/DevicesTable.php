@@ -13,8 +13,8 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Support\Facades\Artisan;
 use Throwable;
-use Webkul\Attendance\Console\ProcessEventsCommand;
 use Webkul\BiometricAttendance\Contracts\ZktecoClientInterface;
+use Webkul\BiometricAttendance\Services\AttendanceBridge;
 use Webkul\BiometricAttendance\Services\DeviceSyncService;
 use Webkul\BiometricAttendance\Services\ZktecoConnectionException;
 
@@ -114,7 +114,7 @@ class DevicesTable
 
                         Artisan::call('biometric:push-events');
 
-                        if (class_exists(ProcessEventsCommand::class)) {
+                        if (AttendanceBridge::isAvailable()) {
                             Artisan::call('attendance:process-events');
                         }
 
