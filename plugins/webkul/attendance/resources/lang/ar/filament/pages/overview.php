@@ -8,10 +8,12 @@ return [
     ],
 
     'form' => [
+        'heading'        => 'الفلاتر',
         'employee'       => 'الموظف',
         'all-employees'  => 'كل الموظفين',
         'date-from'      => 'من',
         'date-to'        => 'إلى',
+        'apply'          => 'تطبيق',
         'range-too-wide' => 'يجب ألا يتجاوز النطاق :days يوماً.',
     ],
 
@@ -38,6 +40,10 @@ return [
         'absent'   => 'غائب',
         'pending'  => 'معلق',
         'half-day' => 'نصف يوم',
+    ],
+
+    'empty' => [
+        'heading' => 'لا توجد أيام عمل للعرض.',
     ],
 
     'grid' => [

@@ -8,10 +8,12 @@ return [
     ],
 
     'form' => [
+        'heading'        => 'Filtres',
         'employee'       => 'Employé',
         'all-employees'  => 'Tous les employés',
         'date-from'      => 'Du',
         'date-to'        => 'Au',
+        'apply'          => 'Appliquer',
         'range-too-wide' => 'La plage ne doit pas dépasser :days jours.',
     ],
 
@@ -38,6 +40,10 @@ return [
         'absent'   => 'Absent',
         'pending'  => 'En attente',
         'half-day' => 'Demi-journée',
+    ],
+
+    'empty' => [
+        'heading' => 'Aucun jour ouvré à afficher.',
     ],
 
     'grid' => [

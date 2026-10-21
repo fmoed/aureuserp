@@ -8,10 +8,12 @@ return [
     ],
 
     'form' => [
+        'heading'        => 'Filters',
         'employee'       => 'Employee',
         'all-employees'  => 'All employees',
         'date-from'      => 'From',
         'date-to'        => 'To',
+        'apply'          => 'Apply',
         'range-too-wide' => 'The range must not exceed :days days.',
     ],
 
@@ -38,6 +40,10 @@ return [
         'absent'   => 'Absent',
         'pending'  => 'Pending',
         'half-day' => 'Half day',
+    ],
+
+    'empty' => [
+        'heading' => 'No workdays to show.',
     ],
 
     'grid' => [
