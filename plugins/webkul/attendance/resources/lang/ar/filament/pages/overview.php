@@ -27,6 +27,12 @@ return [
         'month-future'   => 'الشهر المحدد في المستقبل.',
     ],
 
+    'filter-chips' => [
+        'period'   => 'الفترة',
+        'employee' => 'الموظف',
+        'clear'    => 'مسح',
+    ],
+
     'table' => [
         'columns' => [
             'employee' => 'الموظف',

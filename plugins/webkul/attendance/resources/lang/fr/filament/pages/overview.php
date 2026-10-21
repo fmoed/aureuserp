@@ -27,6 +27,12 @@ return [
         'month-future'   => 'Le mois sélectionné est dans le futur.',
     ],
 
+    'filter-chips' => [
+        'period'   => 'Période',
+        'employee' => 'Employé',
+        'clear'    => 'Effacer',
+    ],
+
     'table' => [
         'columns' => [
             'employee' => 'Employé',

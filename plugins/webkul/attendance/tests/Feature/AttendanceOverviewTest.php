@@ -501,6 +501,37 @@ it('lets users toggle day columns and sort the register by employee name', funct
     }
 });
 
+it('shows applied filter chips and clears the employee filter in place', function () {
+    Carbon::setTestNow('2026-09-15 12:00:00');
+
+    try {
+        actingAsOverviewUser();
+
+        ['empA' => $empA] = overviewDataset(Company::whereKey(current_company_id())->firstOrFail());
+
+        $component = Livewire::test(AttendanceOverview::class)
+            ->assertSee('September 2026')
+            ->assertDontSee('wire:click="clearEmployee"', false);
+
+        $component
+            ->fillForm(['employee_id' => $empA->id], 'filterForm')
+            ->call('applyFilters')
+            ->assertSee($empA->name)
+            ->assertSee('wire:click="clearEmployee"', false)
+            ->assertSet('employeeId', $empA->id);
+
+        $component
+            ->call('clearEmployee')
+            ->assertSet('employeeId', null)
+            ->assertDontSee('wire:click="clearEmployee"', false);
+
+        expect($component->instance()->appliedEmployeeName())->toBeNull()
+            ->and($component->instance()->appliedPeriodLabel())->toBe('September 2026');
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
 it('maps every register status to a distinct one-glyph cell code', function () {
     expect(AttendanceRegisterTable::statusShortLabel(AttendanceOverviewService::STATUS_PRESENT))->toBe('P')
         ->and(AttendanceRegisterTable::statusShortLabel(AttendanceOverviewService::STATUS_ABSENT))->toBe('A')
