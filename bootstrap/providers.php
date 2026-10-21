@@ -9,6 +9,7 @@ use Webkul\Accounting\AccountingServiceProvider;
 use Webkul\Analytic\AnalyticServiceProvider;
 use Webkul\Attendance\AttendanceServiceProvider;
 use Webkul\Barcode\BarcodeServiceProvider;
+use Webkul\BiometricAttendance\BiometricAttendanceServiceProvider;
 use Webkul\Blog\BlogServiceProvider;
 use Webkul\Chatter\ChatterServiceProvider;
 use Webkul\Contact\ContactServiceProvider;
@@ -45,6 +46,7 @@ return [
     AnalyticServiceProvider::class,
     AttendanceServiceProvider::class,
     BarcodeServiceProvider::class,
+    BiometricAttendanceServiceProvider::class,
     BlogServiceProvider::class,
     ChatterServiceProvider::class,
     ContactServiceProvider::class,
