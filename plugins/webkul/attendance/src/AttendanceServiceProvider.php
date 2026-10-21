@@ -6,6 +6,8 @@ use Filament\Panel;
 use Illuminate\Support\Facades\Gate;
 use Webkul\Attendance\Console\ProcessEventsCommand;
 use Webkul\Attendance\Models\Attendance;
+use Webkul\Attendance\Models\AttendanceEvent;
+use Webkul\Attendance\Policies\AttendanceEventPolicy;
 use Webkul\Attendance\Policies\AttendancePolicy;
 use Webkul\PluginManager\Console\Commands\InstallCommand;
 use Webkul\PluginManager\Console\Commands\UninstallCommand;
@@ -52,5 +54,6 @@ class AttendanceServiceProvider extends PackageServiceProvider
     public function packageBooted(): void
     {
         Gate::policy(Attendance::class, AttendancePolicy::class);
+        Gate::policy(AttendanceEvent::class, AttendanceEventPolicy::class);
     }
 }
