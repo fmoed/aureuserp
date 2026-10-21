@@ -67,7 +67,7 @@ class AbsenceReportExporter extends Exporter
     {
         $ids = app(CompanyContext::class)->activeIds();
 
-        return $query
+        return AttendanceOverviewService::scopeEligibleEmployees($query)
             ->when(
                 $ids !== [],
                 fn (Builder $query) => $query->where(
