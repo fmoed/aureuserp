@@ -19,6 +19,7 @@ return [
         'plugin'              => 'الإضافات',
         'setting'             => 'الإعدادات',
         'help'                => 'المساعدة',
+        'attendance'          => 'الحضور',
         'point-of-sale'       => 'نقطة البيع',
         'barcode'             => 'الباركود',
     ],

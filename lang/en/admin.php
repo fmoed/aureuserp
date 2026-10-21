@@ -19,6 +19,7 @@ return [
         'plugin'              => 'Plugins',
         'setting'             => 'Settings',
         'help'                => 'Help',
+        'attendance'          => 'Attendance',
         'point-of-sale'       => 'Point of Sale',
         'barcode'             => 'Barcode',
     ],

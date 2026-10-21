@@ -19,6 +19,7 @@ return [
         'plugin'              => 'Complementos',
         'setting'             => 'Configuración',
         'help'                => 'Ayuda',
+        'attendance'          => 'Asistencias',
         'point-of-sale'       => 'Punto de venta',
         'barcode'             => 'Código de barras',
     ],
