@@ -479,6 +479,28 @@ it('hides the register employee link without the employee view permission', func
     }
 });
 
+it('lets users toggle day columns and sort the register by employee name', function () {
+    Carbon::setTestNow('2026-09-15 12:00:00');
+
+    try {
+        actingAsOverviewUser();
+
+        $table = Livewire::test(AttendanceOverview::class)->instance()->getTable();
+        $columns = collect($table->getColumns());
+
+        $dayColumn = $columns->first(fn (object $column): bool => $column->getName() === 'cells.2026-09-01');
+        $nameColumn = $columns->first(fn (object $column): bool => $column->getName() === 'name');
+
+        expect($dayColumn->isToggleable())->toBeTrue()
+            ->and($dayColumn->isToggledHiddenByDefault())->toBeFalse()
+            ->and($nameColumn->isSortable())->toBeTrue()
+            ->and($table->getDefaultSortColumn())->toBe('name')
+            ->and($table->getDefaultSortDirection())->toBe('asc');
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
 it('maps every register status to a distinct one-glyph cell code', function () {
     expect(AttendanceRegisterTable::statusShortLabel(AttendanceOverviewService::STATUS_PRESENT))->toBe('P')
         ->and(AttendanceRegisterTable::statusShortLabel(AttendanceOverviewService::STATUS_ABSENT))->toBe('A')

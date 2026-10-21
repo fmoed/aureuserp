@@ -33,6 +33,7 @@ class AttendanceRegisterTable
             ->size(TextSize::Small)
             ->width('180px')
             ->searchable()
+            ->sortable()
             ->url(fn (Employee $record): ?string => auth()->user()?->can('view', $record)
                 ? EmployeeResource::getUrl('view', ['record' => $record])
                 : null)
@@ -69,6 +70,7 @@ class AttendanceRegisterTable
                 ->alignCenter()
                 ->width('2.75rem')
                 ->extraHeaderAttributes(['style' => 'padding-inline: .25rem'])
+                ->toggleable()
                 ->placeholder('');
         }
 
@@ -132,9 +134,11 @@ class AttendanceRegisterTable
     {
         return $table
             ->query(fn (): Builder => Employee::query()
-                ->whereIn('id', $grid->keys()->all())
-                ->orderBy('name'))
+                ->whereIn('id', $grid->keys()->all()))
             ->columns($columns)
+            ->defaultSort('name')
+            ->persistSortInSession()
+            ->persistSearchInSession()
             ->defaultPaginationPageOption(25)
             ->paginationPageOptions(AttendanceOverview::PER_PAGE_OPTIONS)
             ->emptyStateIcon('heroicon-o-calendar-days')
