@@ -49,6 +49,10 @@ class BiometricAttendanceServiceProvider extends PackageServiceProvider
                 SyncAllCommand::class,
                 PushEventsCommand::class,
             ])
+            ->hasSettings([
+                '2026_10_12_000001_create_biometric_sync_settings',
+            ])
+            ->runsSettings()
             ->hasInstallCommand(function (InstallCommand $command) {
                 $command
                     ->installDependencies()
@@ -69,25 +73,36 @@ class BiometricAttendanceServiceProvider extends PackageServiceProvider
         }
 
         /**
-         * Chain schedule: sync devices → push punches → pair rows. Cadence comes
-         * from SyncSchedule (config `biometric-attendance.sync_cadence`, hourly
-         * default; the future settings page binds to its options). Ops note:
-         * production cron needs `* * * * * php artisan schedule:run` (single
-         * entry; the scheduler fans out). The attendance pairing step is skipped
+         * Chain schedule: sync devices → push punches → pair rows. Every
+         * event ticks on a fixed fifteen-minute grid and skips itself per
+         * tick unless the stored cadence (config `biometric-attendance.sync_cadence`,
+         * hourly default; the sync settings page binds to its options) is
+         * due — so cadence changes apply on the next tick with no reboot,
+         * and nothing reads settings at boot time. Ops note: production
+         * cron needs `* * * * * php artisan schedule:run` (single entry;
+         * the scheduler fans out). The attendance pairing step is skipped
          * at runtime when that plugin is absent, so boot and the whole schedule
          * stay working without it.
          */
         $this->app->booted(function (): void {
             $schedule = $this->app->make(Schedule::class);
 
-            SyncSchedule::apply($schedule->command('biometric:sync-all'));
-            SyncSchedule::apply($schedule->command('biometric:push-events'));
+            $schedule->command('biometric:sync-all')
+                ->everyFifteenMinutes()
+                ->skip(fn (): bool => ! SyncSchedule::isDue());
 
-            SyncSchedule::apply($schedule->call(function (): void {
+            $schedule->command('biometric:push-events')
+                ->everyFifteenMinutes()
+                ->skip(fn (): bool => ! SyncSchedule::isDue());
+
+            $schedule->call(function (): void {
                 if (AttendanceBridge::isAvailable()) {
                     Artisan::call('attendance:process-events');
                 }
-            })->name('attendance:process-events'));
+            })
+                ->name('attendance:process-events')
+                ->everyFifteenMinutes()
+                ->skip(fn (): bool => ! SyncSchedule::isDue());
         });
     }
 

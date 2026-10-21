@@ -42,6 +42,15 @@ return [
                     'failed-title' => 'فشل الاتصال',
                 ],
             ],
+            'sync-now' => [
+                'label' => 'مزامنة الآن',
+
+                'notification' => [
+                    'title'        => 'اكتملت المزامنة',
+                    'failed-title' => 'فشلت المزامنة',
+                    'body'         => 'مخزّن :stored، موجود مسبقًا :skipped، مُستكمل بأثر رجعي :backfilled.',
+                ],
+            ],
         ],
     ],
 ];

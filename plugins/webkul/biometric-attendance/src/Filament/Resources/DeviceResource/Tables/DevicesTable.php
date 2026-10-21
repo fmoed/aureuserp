@@ -84,7 +84,7 @@ class DevicesTable
                             ->send();
                     }),
                 Action::make('syncNow')
-                    ->label('Sync now')
+                    ->label(__('biometric-attendance::filament/resources/device.table.actions.sync-now.label'))
                     ->icon('heroicon-o-arrow-down-tray')
                     ->color('success')
                     ->action(function ($record) {
@@ -95,7 +95,7 @@ class DevicesTable
 
                             Notification::make()
                                 ->danger()
-                                ->title('Sync failed')
+                                ->title(__('biometric-attendance::filament/resources/device.table.actions.sync-now.notification.failed-title'))
                                 ->body($e->getMessage())
                                 ->send();
 
@@ -105,7 +105,7 @@ class DevicesTable
 
                             Notification::make()
                                 ->danger()
-                                ->title('Sync failed')
+                                ->title(__('biometric-attendance::filament/resources/device.table.actions.sync-now.notification.failed-title'))
                                 ->body($e->getMessage())
                                 ->send();
 
@@ -120,8 +120,12 @@ class DevicesTable
 
                         Notification::make()
                             ->success()
-                            ->title('Sync completed')
-                            ->body("Stored {$result['stored']}, already present {$result['skipped']}, backfilled {$result['backfilled']}.")
+                            ->title(__('biometric-attendance::filament/resources/device.table.actions.sync-now.notification.title'))
+                            ->body(__('biometric-attendance::filament/resources/device.table.actions.sync-now.notification.body', [
+                                'stored'     => $result['stored'],
+                                'skipped'    => $result['skipped'],
+                                'backfilled' => $result['backfilled'],
+                            ]))
                             ->send();
                     }),
                 EditAction::make(),
