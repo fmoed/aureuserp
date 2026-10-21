@@ -25,7 +25,19 @@ class WriterRegistry
      */
     protected static array $writers = [];
 
-    public static function register(string $slug, ?callable $labelResolver = null): void
+    /**
+     * Optional employee eligibility scopes registered by writer plugins:
+     * slug => callable(Builder): void.
+     *
+     * Allows any attendance writer plugin (e.g. biometric-attendance,
+     * remote-attendance) to declare which employees are enrolled in its
+     * check-in method when filtering the attendance register.
+     *
+     * @var array<string, ?callable>
+     */
+    protected static array $employeeScopes = [];
+
+    public static function register(string $slug, ?callable $labelResolver = null, ?callable $employeeScope = null): void
     {
         $slug = strtolower($slug);
 
@@ -34,11 +46,13 @@ class WriterRegistry
         }
 
         static::$writers[$slug] = $labelResolver;
+        static::$employeeScopes[$slug] = $employeeScope;
     }
 
     public static function flush(): void
     {
         static::$writers = [];
+        static::$employeeScopes = [];
     }
 
     public static function isRegistered(string $slug): bool
@@ -63,5 +77,13 @@ class WriterRegistry
     public static function slugs(): array
     {
         return array_keys(static::$writers);
+    }
+
+    /**
+     * @return array<string, callable>
+     */
+    public static function employeeScopes(): array
+    {
+        return array_filter(static::$employeeScopes);
     }
 }

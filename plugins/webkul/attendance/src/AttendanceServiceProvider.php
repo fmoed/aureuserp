@@ -36,6 +36,10 @@ class AttendanceServiceProvider extends PackageServiceProvider
                 'employees',
             ])
             ->runsMigrations()
+            ->hasSettings([
+                '2026_10_19_000001_create_attendance_settings',
+            ])
+            ->runsSettings()
             ->hasInstallCommand(function (InstallCommand $command) {
                 $command
                     ->installDependencies()

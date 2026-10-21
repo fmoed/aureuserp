@@ -80,7 +80,7 @@ trait HasAbsenceExportOptions
         return [
             Select::make('employee_id')
                 ->label(__('attendance::filament/exports/absence-report.options.employee'))
-                ->options(fn (): array => Employee::query()->orderBy('name')->pluck('name', 'id')->all())
+                ->options(fn (): array => AttendanceOverviewService::scopeEligibleEmployees(Employee::query())->orderBy('name')->pluck('name', 'id')->all())
                 ->searchable()
                 ->nullable()
                 ->default(fn ($livewire): ?int => $livewire instanceof AttendanceOverview ? $livewire->employeeId : null),

@@ -2,9 +2,13 @@
 
 namespace Webkul\Attendance\Services;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Webkul\Attendance\Models\Attendance;
+use Webkul\Attendance\Models\AttendanceEvent;
+use Webkul\Attendance\Settings\AttendanceSettings;
+use Webkul\Attendance\Writers\WriterRegistry;
 use Webkul\Employee\Models\Employee;
 use Webkul\Support\Models\Calendar;
 use Webkul\Support\Models\CalendarLeave;
@@ -94,6 +98,61 @@ class AttendanceOverviewService
     public static function rangeDays(string|Carbon $from, string|Carbon $to): int
     {
         return Carbon::parse($from)->startOfDay()->diffInDays(Carbon::parse($to)->startOfDay());
+    }
+
+    /**
+     * Scopes an Employee query according to the configured AttendanceSettings
+     * scope ('all', 'enrolled_or_active', 'enrolled', 'recent_activity').
+     *
+     * - 'enrolled' matches employees with a non-empty barcode OR matching any
+     *   registered writer plugin scope in WriterRegistry::employeeScopes().
+     * - 'recent_activity' matches employees who have at least one record in
+     *   attendance_attendances or attendance_events within the last 12 months
+     *   (covering biometric, remote, and manual attendance writers).
+     */
+    public static function scopeEligibleEmployees(Builder $query, ?string $scope = null): Builder
+    {
+        $scope ??= AttendanceSettings::storedScope();
+
+        if ($scope === AttendanceSettings::SCOPE_ALL) {
+            return $query;
+        }
+
+        $applyEnrolled = static function (Builder $q): void {
+            $q->where(function (Builder $inner): void {
+                $inner->whereNotNull('barcode')->where('barcode', '!=', '');
+            });
+
+            foreach (WriterRegistry::employeeScopes() as $writerScope) {
+                $q->orWhere(function (Builder $inner) use ($writerScope): void {
+                    $writerScope($inner);
+                });
+            }
+        };
+
+        $applyRecentActivity = static function (Builder $q): void {
+            $sinceDate = Carbon::today()->subYear()->toDateString();
+            $sinceDateTime = Carbon::today()->subYear()->startOfDay()->toDateTimeString();
+
+            $q->whereIn('id', Attendance::query()->where('work_date', '>=', $sinceDate)->select('employee_id'))
+                ->orWhereIn('id', AttendanceEvent::query()->whereNotNull('employee_id')->where('punched_at', '>=', $sinceDateTime)->select('employee_id'));
+        };
+
+        return match ($scope) {
+            AttendanceSettings::SCOPE_ENROLLED => $query->where(function (Builder $q) use ($applyEnrolled): void {
+                $applyEnrolled($q);
+            }),
+            AttendanceSettings::SCOPE_RECENT_ACTIVITY => $query->where(function (Builder $q) use ($applyRecentActivity): void {
+                $applyRecentActivity($q);
+            }),
+            AttendanceSettings::SCOPE_ENROLLED_OR_ACTIVE => $query->where(function (Builder $q) use ($applyEnrolled, $applyRecentActivity): void {
+                $applyEnrolled($q);
+                $q->orWhere(function (Builder $inner) use ($applyRecentActivity): void {
+                    $applyRecentActivity($inner);
+                });
+            }),
+            default => $query,
+        };
     }
 
     /**
