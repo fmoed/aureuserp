@@ -854,6 +854,7 @@ class AttendanceOverview extends Page implements HasForms, HasTable
                 $present = 0;
                 $absent = 0;
                 $leave = 0;
+                $off = 0;
 
                 foreach ($grid as $row) {
                     match ($row['cells'][$date] ?? null) {
@@ -862,9 +863,13 @@ class AttendanceOverview extends Page implements HasForms, HasTable
                         AttendanceOverviewService::STATUS_PENDING => $absent++,
                         AttendanceOverviewService::STATUS_ON_LEAVE,
                         AttendanceOverviewService::STATUS_HALF_DAY => $leave++,
+                        AttendanceOverviewService::STATUS_WEEKLY_OFF,
+                        AttendanceOverviewService::STATUS_HOLIDAY  => $off++,
                         default                                    => null,
                     };
                 }
+
+                $total = $present + $absent + $leave + $off;
 
                 return [
                     'date'    => $date,
@@ -872,6 +877,8 @@ class AttendanceOverview extends Page implements HasForms, HasTable
                     'present' => $present,
                     'absent'  => $absent,
                     'leave'   => $leave,
+                    'off'     => $off,
+                    'total'   => $total,
                 ];
             })
             ->values()

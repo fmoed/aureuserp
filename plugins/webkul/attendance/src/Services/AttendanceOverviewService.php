@@ -238,10 +238,13 @@ class AttendanceOverviewService
                     : $this->displayStatus($byDate->get($date));
             }
 
+            $calendar = $this->calendarFor($employee);
+
             $rows->push([
                 'employee_id' => $employee->getKey(),
                 'name'        => $employee->name,
-                'calendar'    => $this->calendarFor($employee)?->name,
+                'calendar'    => $calendar?->name,
+                'calendar_id' => $calendar?->id,
                 'cells'       => $cells,
                 'totals'      => $this->summarize($employee, $employeeEntries),
             ]);
@@ -333,10 +336,13 @@ class AttendanceOverviewService
             $totals = $totalsByEmployee[$employee->getKey()];
             $totals['absence_rate'] = $totals['workdays'] === 0 ? 0.0 : round($totals['absent'] / $totals['workdays'] * 100, 1);
 
+            $calendar = $this->calendarFor($employee);
+
             $rows->push([
                 'employee_id' => $employee->getKey(),
                 'name'        => $employee->name,
-                'calendar'    => $this->calendarFor($employee)?->name,
+                'calendar'    => $calendar?->name,
+                'calendar_id' => $calendar?->id,
                 'cells'       => $cellsByEmployee[$employee->getKey()],
                 'totals'      => $totals,
             ]);
@@ -485,12 +491,13 @@ class AttendanceOverviewService
     /**
      * Schedule resolution: the employee calendar first, then the company
      * calendar, then a global (company-less) calendar shared by everyone.
-     * A null-company calendar is the normal single-roster setup, so it
-     * must apply instead of yielding zero workdays.
+     * Only calendars with configured attendance intervals (working hours)
+     * are treated as operable schedules, preventing empty calendar shells
+     * from wiping out workdays and hiding employees.
      */
     protected function calendarFor(Employee $employee): ?Calendar
     {
-        if ($employee->calendar) {
+        if ($employee->calendar && $this->calendarHasAttendance($employee->calendar)) {
             return $employee->calendar;
         }
 
@@ -501,6 +508,7 @@ class AttendanceOverviewService
                 $this->calendarCache[$key] = Calendar::query()
                     ->where('company_id', $employee->company_id)
                     ->where('is_active', true)
+                    ->whereHas('attendance')
                     ->orderBy('id')
                     ->first();
             }
@@ -514,11 +522,27 @@ class AttendanceOverviewService
             $this->calendarCache['global'] = Calendar::query()
                 ->whereNull('company_id')
                 ->where('is_active', true)
+                ->whereHas('attendance')
                 ->orderBy('id')
                 ->first();
         }
 
-        return $this->calendarCache['global'];
+        if ($this->calendarCache['global']) {
+            return $this->calendarCache['global'];
+        }
+
+        return $employee->calendar
+            ?? ($employee->company_id !== null
+                ? Calendar::query()->where('company_id', $employee->company_id)->where('is_active', true)->orderBy('id')->first()
+                : null)
+            ?? Calendar::query()->whereNull('company_id')->where('is_active', true)->orderBy('id')->first();
+    }
+
+    protected function calendarHasAttendance(Calendar $calendar): bool
+    {
+        return $calendar->relationLoaded('attendance')
+            ? $calendar->attendance->isNotEmpty()
+            : $calendar->attendance()->exists();
     }
 
     /**
