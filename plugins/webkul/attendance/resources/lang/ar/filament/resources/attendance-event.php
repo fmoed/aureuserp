@@ -24,12 +24,15 @@ return [
         ],
 
         'filters' => [
-            'employee'       => 'الموظف',
-            'source'         => 'المصدر',
-            'punched-at'     => 'تاريخ البصمة',
-            'date-from'      => 'من',
-            'date-to'        => 'إلى',
-            'range-too-wide' => 'يجب ألا يتجاوز النطاق :days يوماً.',
+            'linkage'           => 'الربط',
+            'linkage-paired'    => 'مرتبط بصف حضور',
+            'linkage-unpaired'  => 'غير مرتبط',
+            'employee'          => 'الموظف',
+            'source'            => 'المصدر',
+            'punched-at'        => 'تاريخ البصمة',
+            'date-from'         => 'من',
+            'date-to'           => 'إلى',
+            'range-too-wide'    => 'يجب ألا يتجاوز النطاق :days يوماً.',
         ],
 
         'toolbar-actions' => [

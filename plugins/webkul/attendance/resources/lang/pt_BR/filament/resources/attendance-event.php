@@ -24,12 +24,15 @@ return [
         ],
 
         'filters' => [
-            'employee'       => 'Funcionário',
-            'source'         => 'Fonte',
-            'punched-at'     => 'Data da marcação',
-            'date-from'      => 'De',
-            'date-to'        => 'Até',
-            'range-too-wide' => 'O intervalo não deve exceder :days dias.',
+            'linkage'           => 'Vínculo',
+            'linkage-paired'    => 'Vinculado',
+            'linkage-unpaired'  => 'Não vinculado',
+            'employee'          => 'Funcionário',
+            'source'            => 'Fonte',
+            'punched-at'        => 'Data da marcação',
+            'date-from'         => 'De',
+            'date-to'           => 'Até',
+            'range-too-wide'    => 'O intervalo não deve exceder :days dias.',
         ],
 
         'toolbar-actions' => [

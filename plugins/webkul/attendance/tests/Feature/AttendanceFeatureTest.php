@@ -15,6 +15,7 @@ use Webkul\Attendance\Filament\Resources\AttendanceResource\Pages\ListAttendance
 use Webkul\Attendance\Filament\Resources\AttendanceResource\Schemas\AttendanceForm;
 use Webkul\Attendance\Filament\Resources\AttendanceResource\Tables\AttendancesTable;
 use Webkul\Attendance\Filament\Widgets\AttendanceStatsWidget;
+use Webkul\Attendance\Filament\Widgets\TodayAttendanceWidget;
 use Webkul\Attendance\Models\Attendance;
 use Webkul\Attendance\Policies\AttendancePolicy;
 use Webkul\Attendance\Writers\WriterRegistry;
@@ -194,6 +195,77 @@ it('maps persisted rows to export values on the employee wall clock', function (
         '',
         'Manual',
     ]);
+});
+
+it('aggregates today stats for the dashboard widget', function () {
+    Carbon::setTestNow('2026-09-24 10:00:00');
+
+    try {
+        $employeeA = Employee::factory()->create(['user_id' => User::factory()]);
+        $employeeB = Employee::factory()->create(['user_id' => User::factory()]);
+
+        Attendance::create([
+            'employee_id' => $employeeA->id,
+            'work_date'   => '2026-09-24',
+            'check_in'    => '2026-09-24 08:00:00',
+            'check_out'   => '2026-09-24 17:00:00',
+            'source'      => 'manual',
+            'company_id'  => $employeeA->company_id,
+        ]);
+
+        Attendance::create([
+            'employee_id' => $employeeB->id,
+            'work_date'   => '2026-09-24',
+            'check_in'    => '2026-09-24 09:00:00',
+            'source'      => 'manual',
+            'company_id'  => $employeeB->company_id,
+        ]);
+
+        // نفس الموظف بصمة ثانية نفس اليوم: صف ثانٍ، الموظف الحاضر نفسه
+        Attendance::create([
+            'employee_id' => $employeeB->id,
+            'work_date'   => '2026-09-24',
+            'check_in'    => '2026-09-24 13:00:00',
+            'check_out'   => '2026-09-24 14:00:00',
+            'source'      => 'manual',
+            'company_id'  => $employeeB->company_id,
+        ]);
+
+        // يوم آخر لا يدخل في عداد اليوم
+        Attendance::create([
+            'employee_id' => $employeeA->id,
+            'work_date'   => '2026-09-23',
+            'check_in'    => '2026-09-23 08:00:00',
+            'check_out'   => '2026-09-23 17:00:00',
+            'source'      => 'manual',
+            'company_id'  => $employeeA->company_id,
+        ]);
+
+        $stats = TodayAttendanceWidget::todayStats();
+
+        expect($stats['rows'])->toBe(3)
+            ->and($stats['present'])->toBe(2)
+            ->and($stats['open'])->toBe(1);
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
+it('keeps the today widget behind its shield permission on a compact grid', function () {
+    $widget = app(TodayAttendanceWidget::class);
+
+    $method = new ReflectionMethod($widget, 'getColumns');
+    $method->setAccessible(true);
+
+    $permission = new ReflectionMethod($widget, 'getPagePermission');
+    $permission->setAccessible(true);
+
+    expect($method->invoke($widget))->toBe([
+        'default' => 2,
+        'sm'      => 2,
+        'md'      => 3,
+        'lg'      => 3,
+    ])->and($permission->invoke(null))->toBe('widget_attendance_today_widget');
 });
 
 it('renders the create and edit attendance pages', function () {

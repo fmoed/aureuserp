@@ -190,6 +190,38 @@ it('filters events by employee', function () {
         ->assertCanNotSeeTableRecords([$other]);
 });
 
+it('filters events by pairing linkage', function () {
+    FilamentHelper::actingAs(['view_any_attendance_attendance::event']);
+
+    $employee = Employee::factory()->create(['user_id' => User::factory()]);
+
+    // تُربط البصمة بصف حضور تلقائياً عبر attendance:process-events؛
+    // نبني الربط يدوياً هنا للتحكم في السيناريو مباشرة
+    $paired = EventGateway::push($employee->id, '2026-09-10 08:00:00', 0, 'biometric-attendance:3', 'evt-p1');
+    $unpaired = EventGateway::push($employee->id, '2026-09-10 09:00:00', 0, 'biometric-attendance:3', 'evt-p2');
+
+    $row = Attendance::create([
+        'employee_id' => $employee->id,
+        'work_date'   => '2026-09-10',
+        'check_in'    => '2026-09-10 08:00:00',
+        'check_out'   => '2026-09-10 17:00:00',
+        'source'      => 'biometric-attendance',
+        'company_id'  => $employee->company_id,
+    ]);
+
+    $paired->update(['attendance_id' => $row->id]);
+
+    Livewire::test(ListAttendanceEvents::class)
+        ->filterTable('linkage', 'unpaired')
+        ->assertCanSeeTableRecords([$unpaired])
+        ->assertCanNotSeeTableRecords([$paired]);
+
+    Livewire::test(ListAttendanceEvents::class)
+        ->filterTable('linkage', 'paired')
+        ->assertCanSeeTableRecords([$paired])
+        ->assertCanNotSeeTableRecords([$unpaired]);
+});
+
 it('filters events by device source', function () {
     FilamentHelper::actingAs(['view_any_attendance_attendance::event']);
 
