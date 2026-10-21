@@ -18,6 +18,7 @@ class Punch extends Model
         'raw_state',
         'raw_type',
         'device_uid',
+        'pushed_at',
     ];
 
     protected $casts = [
@@ -25,6 +26,7 @@ class Punch extends Model
         'raw_state'  => 'integer',
         'raw_type'   => 'integer',
         'device_uid' => 'integer',
+        'pushed_at'  => 'datetime',
     ];
 
     public function device(): BelongsTo
