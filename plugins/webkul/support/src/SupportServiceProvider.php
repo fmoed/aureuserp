@@ -2,7 +2,9 @@
 
 namespace Webkul\Support;
 
+use Filament\Navigation\NavigationItem;
 use Filament\Panel;
+use Filament\Support\Assets\Js;
 use Filament\Support\Facades\FilamentAsset;
 use Filament\Support\Facades\FilamentView;
 use Filament\View\PanelsRenderHook;
@@ -123,6 +125,28 @@ class SupportServiceProvider extends PackageServiceProvider
             },
         );
 
+        FilamentView::registerRenderHook(
+            PanelsRenderHook::PAGE_HEADER_WIDGETS_BEFORE,
+            function (): string {
+                $page = Livewire::current();
+
+                if (! method_exists($page, 'getRecordNavigationTabs')) {
+                    return '';
+                }
+
+                $navigationItems = collect($page->getRecordNavigationTabs())
+                    ->filter(fn (NavigationItem $item): bool => $item->isVisible());
+
+                if ($navigationItems->isEmpty()) {
+                    return '';
+                }
+
+                return view('support::filament.pages.record-navigation', [
+                    'navigationItems' => $navigationItems,
+                ])->render();
+            },
+        );
+
         Livewire::component('quick-navigation', QuickNavigation::class);
 
         Gate::policy(Role::class, RolePolicy::class);
@@ -134,6 +158,7 @@ class SupportServiceProvider extends PackageServiceProvider
 
         FilamentAsset::register([
             SupportCss::make('support', __DIR__.'/../resources/dist/support.css'),
+            Js::make('dashboard-charts', __DIR__.'/../resources/js/dashboard-charts.js'),
         ], 'support');
 
         $this->registerFilamentDefaults();

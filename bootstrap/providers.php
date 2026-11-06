@@ -7,12 +7,14 @@ use App\Providers\Filament\PosPanelProvider;
 use Webkul\Account\AccountServiceProvider;
 use Webkul\Accounting\AccountingServiceProvider;
 use Webkul\Analytic\AnalyticServiceProvider;
+use Webkul\Asset\AssetServiceProvider;
 use Webkul\Attendance\AttendanceServiceProvider;
 use Webkul\Barcode\BarcodeServiceProvider;
 use Webkul\BiometricAttendance\BiometricAttendanceServiceProvider;
 use Webkul\Blog\BlogServiceProvider;
 use Webkul\Chatter\ChatterServiceProvider;
 use Webkul\Contact\ContactServiceProvider;
+use Webkul\Crm\CRMServiceProvider;
 use Webkul\Employee\EmployeeServiceProvider;
 use Webkul\Field\FieldServiceProvider;
 use Webkul\FullCalendar\FullCalendarServiceProvider;
@@ -49,7 +51,9 @@ return [
     BiometricAttendanceServiceProvider::class,
     BlogServiceProvider::class,
     ChatterServiceProvider::class,
+    AssetServiceProvider::class,
     ContactServiceProvider::class,
+    CRMServiceProvider::class,
     EmployeeServiceProvider::class,
     FieldServiceProvider::class,
     InventoryServiceProvider::class,

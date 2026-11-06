@@ -11,3 +11,7 @@
    chart bars, tints) silently never compiled. */
 @source '../../../../../';
 @source '../../../../../vendor/guava/filament-icon-picker/resources/views';
+
+.fi-ta-group-selection-cell {
+    padding-inline-start: 1rem !important;
+}

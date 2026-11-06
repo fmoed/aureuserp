@@ -35,11 +35,20 @@
         <testsuite name="ProductFeature">
             <directory>plugins/webkul/products/tests/Feature</directory>
         </testsuite>
+        <testsuite name="AssetFeature">
+            <directory>plugins/webkul/assets/tests/Feature</directory>
+        </testsuite>
         <testsuite name="SupportFeature">
             <directory>plugins/webkul/support/tests/Feature</directory>
         </testsuite>
         <testsuite name="EmployeeFeature">
             <directory>plugins/webkul/employees/tests/Feature</directory>
+        </testsuite>
+        <testsuite name="CrmFeature">
+            <directory>plugins/webkul/crm/tests/Feature</directory>
+        </testsuite>
+        <testsuite name="WebsiteFeature">
+            <directory>plugins/webkul/website/tests/Feature</directory>
         </testsuite>
         <testsuite name="SecurityFeature">
             <directory>plugins/webkul/security/tests/Feature</directory>
