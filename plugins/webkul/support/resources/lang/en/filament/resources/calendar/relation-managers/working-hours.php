@@ -53,6 +53,7 @@ return [
             'day-period'    => 'Day Periods',
             'work-from'     => 'Work From',
             'work-to'       => 'Work To',
+            'duration'      => 'Duration',
             'starting-date' => 'Starting Date',
             'ending-date'   => 'Ending Date',
             'display-type'  => 'Display Type',

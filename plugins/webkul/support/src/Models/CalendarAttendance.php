@@ -3,6 +3,7 @@
 namespace Webkul\Support\Models;
 
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -55,6 +56,61 @@ class CalendarAttendance extends Model implements Sortable
     public function resource(): MorphTo
     {
         return $this->morphTo();
+    }
+
+    /**
+     * Normalize a stored hour value to minutes past midnight.
+     *
+     * Accepts both historical decimal hours (`8`, `"8.5"`) and clock strings
+     * (`"08:30"`, `"08:30:00"`) so legacy rows never crash the calendar math.
+     */
+    public static function minutesOfDay(mixed $value): float
+    {
+        if ($value === null || $value === '') {
+            return 0.0;
+        }
+
+        if (is_numeric($value)) {
+            return (float) $value * 60;
+        }
+
+        if (preg_match('/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/', trim((string) $value), $matches)) {
+            return (float) ((int) $matches[1] * 60 + (int) $matches[2] + ((int) ($matches[3] ?? 0)) / 60);
+        }
+
+        return 0.0;
+    }
+
+    /**
+     * Persist decimal hours but expose the clock value to forms and tables.
+     */
+    protected static function hourAttribute(): Attribute
+    {
+        return Attribute::make(
+            get: fn (mixed $value): ?string => $value === null || $value === ''
+                ? null
+                : static::formatClock(static::minutesOfDay($value)),
+            set: fn (mixed $value): ?string => $value === null || $value === ''
+                ? null
+                : (string) round(static::minutesOfDay($value) / 60, 4),
+        );
+    }
+
+    protected static function formatClock(float $minutes): string
+    {
+        $minutes = (int) round($minutes);
+
+        return sprintf('%02d:%02d', intdiv($minutes, 60), $minutes % 60);
+    }
+
+    protected function hourFrom(): Attribute
+    {
+        return static::hourAttribute();
+    }
+
+    protected function hourTo(): Attribute
+    {
+        return static::hourAttribute();
     }
 
     public static function getWeekType(\DateTime|Carbon $date): int

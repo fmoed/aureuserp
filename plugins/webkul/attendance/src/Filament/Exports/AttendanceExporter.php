@@ -9,7 +9,10 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Webkul\Attendance\Filament\Exports\Concerns\HasAbsenceExportOptions;
 use Webkul\Attendance\Filament\Resources\AttendanceResource\Tables\AttendancesTable;
+use Webkul\Attendance\Filament\Tables\AttendanceRegisterTable;
 use Webkul\Attendance\Models\Attendance;
+use Webkul\Attendance\Policies\AttendancePolicy;
+use Webkul\Attendance\Services\AttendanceOverviewService;
 
 class AttendanceExporter extends Exporter
 {
@@ -24,10 +27,10 @@ class AttendanceExporter extends Exporter
 
     public static function scopeQuery(Builder $query, array $options): Builder
     {
-        return $query
+        return AttendancePolicy::scopeQuery($query)
             ->when(
                 $options['employee_id'] ?? null,
-                fn (Builder $query, mixed $employeeId) => $query->where('employee_id', $employeeId)
+                fn (Builder $query, mixed $employeeId) => $query->whereIn('employee_id', (array) $employeeId)
             )
             ->when(
                 $options['date_from'] ?? null,
@@ -36,6 +39,14 @@ class AttendanceExporter extends Exporter
             ->when(
                 $options['date_to'] ?? null,
                 fn (Builder $query, mixed $dateTo) => $query->whereDate('work_date', '<=', $dateTo)
+            )
+            ->when(
+                $options['department_id'] ?? null,
+                fn (Builder $query, mixed $departmentId) => $query->whereHas('employee', fn (Builder $employee) => AttendanceOverviewService::scopeByDepartment($employee, (array) $departmentId))
+            )
+            ->when(
+                $options['calendar_id'] ?? null,
+                fn (Builder $query, mixed $calendarId) => $query->whereHas('employee', fn (Builder $employee) => AttendanceOverviewService::scopeByCalendar($employee, (array) $calendarId))
             );
     }
 
@@ -56,6 +67,12 @@ class AttendanceExporter extends Exporter
             ExportColumn::make('worked_minutes')
                 ->label(__('attendance::filament/exports/attendance.columns.worked'))
                 ->formatStateUsing(fn ($state) => $state === null ? '' : intdiv((int) $state, 60).'h '.((int) $state % 60).'m'),
+            ExportColumn::make('break_minutes')
+                ->label(__('attendance::filament/exports/attendance.columns.break'))
+                ->formatStateUsing(fn ($state): string => AttendanceRegisterTable::formatMinutesToHours((int) ($state ?? 0))),
+            ExportColumn::make('is_estimated')
+                ->label(__('attendance::filament/exports/attendance.columns.estimated'))
+                ->formatStateUsing(fn ($state): string => $state ? __('attendance::filament/exports/attendance.columns.estimated') : ''),
             ExportColumn::make('source')
                 ->label(__('attendance::filament/exports/attendance.columns.source'))
                 ->formatStateUsing(fn (?string $state, Attendance $record): string => Attendance::sourceDisplayName($state ?? $record->source, $record->source_label)),

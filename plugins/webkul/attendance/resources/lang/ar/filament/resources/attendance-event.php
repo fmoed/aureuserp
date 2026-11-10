@@ -24,6 +24,8 @@ return [
         ],
 
         'filters' => [
+            'department'        => 'القسم',
+            'calendar'          => 'جدول الدوام',
             'linkage'           => 'الربط',
             'linkage-paired'    => 'مرتبط بصف حضور',
             'linkage-unpaired'  => 'غير مرتبط',
@@ -36,7 +38,8 @@ return [
         ],
 
         'toolbar-actions' => [
-            'export' => 'تصدير',
+            'export'          => 'تصدير',
+            'export-selected' => 'تصدير المحدد',
         ],
     ],
 ];

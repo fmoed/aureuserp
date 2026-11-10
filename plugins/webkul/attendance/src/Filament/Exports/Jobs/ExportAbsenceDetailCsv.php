@@ -59,17 +59,23 @@ class ExportAbsenceDetailCsv extends ExportCsv
             $successfulRows = 0;
 
             foreach ($matrix as $row) {
-                $hoursStr = sprintf('%02d:%02d', intdiv($row['totals']['minutes'], 60), $row['totals']['minutes'] % 60);
+                $totals = $row['totals'];
+                $hoursStr = AttendanceRegisterTable::formatMinutesToHours((int) $totals['minutes']);
 
                 $line = [
                     (string) $row['name'],
                     (string) ($row['calendar'] ?? '—'),
-                    (string) $row['totals']['workdays'],
-                    (string) $row['totals']['present'],
-                    (string) $row['totals']['absent'],
-                    (string) $row['totals']['on_leave'],
+                    AttendanceRegisterTable::formatCount($totals['workdays']),
+                    AttendanceRegisterTable::formatCount($totals['present']),
+                    AttendanceRegisterTable::formatCount($totals['absent']),
+                    AttendanceRegisterTable::formatCount($totals['on_leave']),
+                    AttendanceRegisterTable::formatMinutesToHours((int) ($totals['scheduled_minutes'] ?? 0)),
                     $hoursStr,
-                    $row['totals']['absence_rate'].'%',
+                    AttendanceRegisterTable::formatMinutesToHours((int) ($totals['overtime_minutes'] ?? 0)),
+                    (string) (int) ($totals['late_minutes'] ?? 0),
+                    (string) (int) ($totals['early_leave_minutes'] ?? 0),
+                    AttendanceRegisterTable::formatMinutesToHours((int) ($totals['variance_minutes'] ?? 0), true),
+                    $totals['absence_rate'].'%',
                 ];
 
                 foreach ($dates as $date) {

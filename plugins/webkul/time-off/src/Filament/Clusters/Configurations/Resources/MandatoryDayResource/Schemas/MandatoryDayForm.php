@@ -4,6 +4,7 @@ namespace Webkul\TimeOff\Filament\Clusters\Configurations\Resources\MandatoryDay
 
 use Filament\Forms\Components\ColorPicker;
 use Filament\Forms\Components\DatePicker;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Schema;
 
@@ -31,6 +32,12 @@ class MandatoryDayForm
                     ->default(now()->format('Y-m-d'))
                     ->label(__('time-off::filament/clusters/configurations/resources/mandatory-days.form.fields.end-date'))
                     ->required(),
+                Select::make('calendar_id')
+                    ->label(__('time-off::filament/clusters/configurations/resources/mandatory-days.form.fields.calendar'))
+                    ->relationship('calendar', 'name')
+                    ->searchable()
+                    ->preload()
+                    ->placeholder(__('time-off::filament/clusters/configurations/resources/mandatory-days.form.fields.calendar-placeholder')),
             ]);
     }
 }

@@ -23,6 +23,12 @@ interface DatabaseDialect
     public function monthBucket(string $column): string;
 
     /**
+     * SQL expression yielding whole minutes between two timestamp columns,
+     * for row-level comparisons (e.g. "longer than N minutes").
+     */
+    public function minutesBetween(string $startColumn, string $endColumn): string;
+
+    /**
      * Change a column's underlying type.
      *
      * @param  string  $blueprintMethod  Fluent `Illuminate\Database\Schema\Blueprint` column method to

@@ -2,14 +2,21 @@
 
 return [
     'columns' => [
-        'employee'     => 'Employee',
-        'schedule'     => 'Schedule',
-        'workdays'     => 'Workdays',
-        'present'      => 'Present',
-        'absent'       => 'Absent',
-        'on-leave'     => 'Leaves',
-        'hours'        => 'Working Hours',
-        'absence-rate' => 'Absence Rate',
+        'employee'              => 'Employee',
+        'schedule'              => 'Schedule',
+        'workdays'              => 'Workdays',
+        'present'               => 'Present',
+        'absent'                => 'Absent',
+        'on-leave'              => 'Leaves',
+        'hours'                 => 'Working Hours',
+        'scheduled-minutes'     => 'Scheduled Hours',
+        'worked-minutes'        => 'Worked Hours',
+        'overtime-minutes'      => 'Overtime Hours',
+        'break-minutes'         => 'Break Hours',
+        'late-minutes'          => 'Late Minutes',
+        'early-leave-minutes'   => 'Early Leave Minutes',
+        'variance-minutes'      => 'Variance Hours',
+        'absence-rate'          => 'Absence Rate',
     ],
 
     'notification' => [

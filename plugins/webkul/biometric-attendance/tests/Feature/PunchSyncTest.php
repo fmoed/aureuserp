@@ -142,7 +142,12 @@ it('backfills previously stored unmatched punches exactly once', function () {
         'device_uid' => 1,
     ]);
 
-    $employee = Employee::factory()->create(['barcode' => '111']);
+    $employee = Employee::factory()->create(['barcode' => null]);
+
+    // Quietly enroll the barcode: this test exercises the device-sync
+    // backfill, not the retroactive listener covered elsewhere.
+    $employee->barcode = '111';
+    $employee->saveQuietly();
 
     bindFakeSyncClient();
 

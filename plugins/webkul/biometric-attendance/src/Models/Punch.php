@@ -5,6 +5,7 @@ namespace Webkul\BiometricAttendance\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Webkul\Employee\Models\Employee;
+use Webkul\Support\Models\Scopes\CompanyScope;
 
 class Punch extends Model
 {
@@ -31,11 +32,13 @@ class Punch extends Model
 
     public function device(): BelongsTo
     {
-        return $this->belongsTo(Device::class, 'device_id');
+        return $this->belongsTo(Device::class, 'device_id')
+            ->withoutGlobalScope(CompanyScope::class);
     }
 
     public function employee(): BelongsTo
     {
-        return $this->belongsTo(Employee::class, 'employee_id');
+        return $this->belongsTo(Employee::class, 'employee_id')
+            ->withoutGlobalScope(CompanyScope::class);
     }
 }

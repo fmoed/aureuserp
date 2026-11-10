@@ -6,7 +6,9 @@ use BezhanSalleh\FilamentShield\Traits\HasWidgetShield;
 use Filament\Widgets\StatsOverviewWidget as BaseWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
 use Illuminate\Support\Carbon;
+use Webkul\Attendance\Filament\Resources\AttendanceResource;
 use Webkul\Attendance\Models\Attendance;
+use Webkul\Attendance\Policies\AttendancePolicy;
 
 class AttendanceStatsWidget extends BaseWidget
 {
@@ -29,20 +31,29 @@ class AttendanceStatsWidget extends BaseWidget
         $from = $month->copy()->startOfMonth()->toDateString();
         $to = $month->copy()->endOfMonth()->toDateString();
 
-        $rows = Attendance::query()
+        $monthly = AttendancePolicy::scopeQuery(Attendance::query())
             ->whereDate('work_date', '>=', $from)
-            ->whereDate('work_date', '<=', $to)
-            ->get(['employee_id', 'check_in', 'check_out']);
+            ->whereDate('work_date', '<=', $to);
 
-        $minutes = $rows
-            ->filter(fn (Attendance $row) => $row->check_out !== null)
-            ->sum(fn (Attendance $row) => $row->worked_minutes);
+        $minutes = (clone $monthly)
+            ->whereNotNull('check_in')
+            ->whereNotNull('check_out')
+            ->toBase()
+            ->select(['check_in', 'check_out', 'break_minutes'])
+            ->cursor()
+            ->sum(function (object $row): int {
+                $gross = (int) floor(
+                    Carbon::parse($row->check_in)->diffInMinutes(Carbon::parse($row->check_out))
+                );
+
+                return max(0, $gross - max(0, (int) ($row->break_minutes ?? 0)));
+            });
 
         return [
-            'records'   => $rows->count(),
-            'employees' => $rows->pluck('employee_id')->unique()->count(),
+            'records'   => (clone $monthly)->count(),
+            'employees' => (clone $monthly)->distinct()->count('employee_id'),
             'hours'     => round($minutes / 60, 1),
-            'open'      => $rows->whereNull('check_out')->count(),
+            'open'      => (clone $monthly)->whereNull('check_out')->count(),
         ];
     }
 
@@ -66,19 +77,34 @@ class AttendanceStatsWidget extends BaseWidget
     {
         $stats = static::monthlyStats();
 
+        $monthUrl = AttendanceResource::canViewAny()
+            ? AttendanceResource::getUrl('index', ['tableFilters' => ['work_date' => ['preset' => 'this_month']]])
+            : null;
+
+        $openUrl = AttendanceResource::canViewAny()
+            ? AttendanceResource::getUrl('index', ['tableFilters' => [
+                'work_date'      => ['preset' => 'this_month'],
+                'session_status' => ['value' => 'open'],
+            ]])
+            : null;
+
         return [
             Stat::make(__('attendance::filament/widgets/attendance-stats.stats.records'), $stats['records'])
                 ->description(__('attendance::filament/widgets/attendance-stats.stats.records-description'))
-                ->color('info'),
+                ->color('info')
+                ->url($monthUrl),
             Stat::make(__('attendance::filament/widgets/attendance-stats.stats.employees'), $stats['employees'])
                 ->description(__('attendance::filament/widgets/attendance-stats.stats.employees-description'))
-                ->color('success'),
+                ->color('success')
+                ->url($monthUrl),
             Stat::make(__('attendance::filament/widgets/attendance-stats.stats.hours'), $stats['hours'])
                 ->description(__('attendance::filament/widgets/attendance-stats.stats.hours-description'))
-                ->color('warning'),
+                ->color('warning')
+                ->url($monthUrl),
             Stat::make(__('attendance::filament/widgets/attendance-stats.stats.open'), $stats['open'])
                 ->description(__('attendance::filament/widgets/attendance-stats.stats.open-description'))
-                ->color('danger'),
+                ->color('danger')
+                ->url($openUrl),
         ];
     }
 }

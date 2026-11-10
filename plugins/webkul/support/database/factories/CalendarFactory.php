@@ -18,7 +18,7 @@ class CalendarFactory extends Factory
         return [
             'name'                      => fake()->name,
             'timezone'                  => fake()->timezone,
-            'hours_per_day'             => fake()->randomFloat(2, 0, 24),
+            'hours_per_day'             => 8,
             'is_active'                 => true,
             'two_weeks_calendar'        => false,
             'flexible_hours'            => false,

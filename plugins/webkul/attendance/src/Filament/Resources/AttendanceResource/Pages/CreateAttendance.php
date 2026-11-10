@@ -5,7 +5,7 @@ namespace Webkul\Attendance\Filament\Resources\AttendanceResource\Pages;
 use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Support\Carbon;
 use Webkul\Attendance\Filament\Resources\AttendanceResource;
-use Webkul\Employee\Models\Employee;
+use Webkul\Attendance\Filament\Resources\AttendanceResource\Schemas\AttendanceForm;
 
 class CreateAttendance extends CreateRecord
 {
@@ -20,9 +20,9 @@ class CreateAttendance extends CreateRecord
      */
     protected function mutateFormDataBeforeCreate(array $data): array
     {
-        $timezone = $data['employee_id']
-            ? (Employee::query()->whereKey($data['employee_id'])->value('time_zone') ?: config('app.timezone'))
-            : config('app.timezone');
+        $timezone = AttendanceForm::employeeTimezone(
+            isset($data['employee_id']) ? (int) $data['employee_id'] : null,
+        );
 
         foreach (['check_in', 'check_out'] as $field) {
             if (! empty($data[$field])) {

@@ -2,16 +2,23 @@
 
 namespace Webkul\Attendance\Filament\Exports\Concerns;
 
+use Closure;
+use Filament\Actions\ExportAction;
+use Filament\Actions\ExportBulkAction;
 use Filament\Actions\Exports\Models\Export;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
 use Filament\Schemas\Components\Component;
+use Filament\Schemas\Components\Fieldset;
 use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Schema;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 use Webkul\Attendance\Filament\Pages\AttendanceOverview;
 use Webkul\Attendance\Services\AttendanceOverviewService;
-use Webkul\Employee\Models\Employee;
+use Webkul\Employee\Models\Department;
+use Webkul\Support\Models\Calendar;
 
 trait HasAbsenceExportOptions
 {
@@ -29,11 +36,31 @@ trait HasAbsenceExportOptions
 
         $scope = 'all';
 
-        if (! empty($options['employee_id'])) {
-            $scope = 'emp-'.self::fileNameEmployeeSlug((int) $options['employee_id']);
+        if (filled($options['employee_id'] ?? null)) {
+            $scope = 'emp-'.self::fileNameScope((array) $options['employee_id'], fn (int $id): string => self::fileNameEmployeeSlug($id));
+        } elseif (filled($options['department_id'] ?? null)) {
+            $scope = 'dept-'.self::fileNameScope((array) $options['department_id'], fn (int $id): string => self::fileNameNamedSlug(Department::class, $id));
+        } elseif (filled($options['calendar_id'] ?? null)) {
+            $scope = 'shift-'.self::fileNameScope((array) $options['calendar_id'], fn (int $id): string => self::fileNameNamedSlug(Calendar::class, $id));
         }
 
         return sprintf('%s_%s_to_%s_%s', static::exportFilePrefix(), $from, $to, $scope);
+    }
+
+    /**
+     * A single selected id resolves to its name, several to their count.
+     *
+     * @param  array<int, mixed>  $ids
+     */
+    protected static function fileNameScope(array $ids, Closure $slug): string
+    {
+        $ids = collect($ids)->filter()->map(fn (mixed $id): int => (int) $id)->unique()->values();
+
+        if ($ids->count() === 1) {
+            return $slug((int) $ids->first());
+        }
+
+        return (string) $ids->count();
     }
 
     protected static function exportFilePrefix(): string
@@ -50,11 +77,36 @@ trait HasAbsenceExportOptions
         return 'undated';
     }
 
+    /**
+     * Keep Arabic (and any other letter) in filenames: only strip
+     * filesystem-reserved characters and collapse separators, instead of
+     * ASCII slugging that erases non-Latin employee names entirely.
+     */
     protected static function fileNameEmployeeSlug(int $employeeId): string
     {
-        $slug = (string) str((string) Employee::query()->whereKey($employeeId)->value('name'))->slug();
+        $name = trim((string) AttendanceOverviewService::eligibleEmployeeQuery()
+            ->whereKey($employeeId)
+            ->value('name'));
 
-        return $slug !== '' ? $slug : (string) $employeeId;
+        return self::sanitizeFileNameSegment($name) ?: (string) $employeeId;
+    }
+
+    /**
+     * @param  class-string<Model>  $model
+     */
+    protected static function fileNameNamedSlug(string $model, int $id): string
+    {
+        $name = trim((string) $model::query()->whereKey($id)->value('name'));
+
+        return self::sanitizeFileNameSegment($name) ?: (string) $id;
+    }
+
+    protected static function sanitizeFileNameSegment(string $text): string
+    {
+        $slug = preg_replace('/[^\p{L}\p{N}\-_ ]+/u', '', trim($text)) ?? '';
+        $slug = preg_replace('/[\s_]+/u', '-', $slug) ?? '';
+
+        return mb_strtolower(trim(mb_substr(trim($slug, '-_'), 0, 80), '-_'));
     }
 
     /**
@@ -83,22 +135,27 @@ trait HasAbsenceExportOptions
                 ->default(fn (): string => app()->getLocale()),
             Select::make('employee_id')
                 ->label(__('attendance::filament/exports/absence-report.options.employee'))
-                ->options(fn (): array => AttendanceOverviewService::scopeEligibleEmployees(Employee::query())->orderBy('name')->pluck('name', 'id')->all())
+                ->multiple()
+                ->options(fn (): array => AttendanceOverviewService::searchEligibleEmployees())
+                ->searchable()
+                ->getSearchResultsUsing(fn (string $search): array => AttendanceOverviewService::searchEligibleEmployees($search))
+                ->getOptionLabelsUsing(fn (array $values): array => AttendanceOverviewService::employeeOptionLabels($values))
+                ->nullable()
+                ->default(fn ($livewire): array => static::defaultFilterValues($livewire, 'employee_id')),
+            Select::make('department_id')
+                ->label(__('attendance::filament/exports/absence-report.options.department'))
+                ->multiple()
+                ->options(fn (): array => AttendanceOverviewService::departmentOptions())
                 ->searchable()
                 ->nullable()
-                ->default(function ($livewire): ?int {
-                    if ($livewire instanceof AttendanceOverview) {
-                        return $livewire->employeeId;
-                    }
-
-                    if (method_exists($livewire, 'getTableFilterState')) {
-                        $state = $livewire->getTableFilterState('employee_id');
-
-                        return filled($state['value'] ?? null) ? (int) $state['value'] : null;
-                    }
-
-                    return null;
-                }),
+                ->default(fn ($livewire): array => static::defaultFilterValues($livewire, 'department_id')),
+            Select::make('calendar_id')
+                ->label(__('attendance::filament/exports/absence-report.options.calendar'))
+                ->multiple()
+                ->options(fn (): array => Calendar::query()->orderBy('name')->pluck('name', 'id')->all())
+                ->searchable()
+                ->nullable()
+                ->default(fn ($livewire): array => static::defaultFilterValues($livewire, 'calendar_id')),
             DatePicker::make('date_from')
                 ->label(__('attendance::filament/exports/absence-report.options.date-from'))
                 ->required()
@@ -164,8 +221,8 @@ trait HasAbsenceExportOptions
 
                     return Carbon::today()->toDateString();
                 })
-                ->rules([function (Get $get) use ($maxRangeDays): \Closure {
-                    return function (string $attribute, mixed $value, \Closure $fail) use ($get, $maxRangeDays): void {
+                ->rules([function (Get $get) use ($maxRangeDays): Closure {
+                    return function (string $attribute, mixed $value, Closure $fail) use ($get, $maxRangeDays): void {
                         $from = $get('date_from');
 
                         if (! $from || ! $value) {
@@ -180,5 +237,79 @@ trait HasAbsenceExportOptions
                     };
                 }]),
         ];
+    }
+
+    /**
+     * Active filter ids of the launch page as a list, so the export modal
+     * starts from exactly what the user is looking at (the page filters
+     * when launched from the overview, the table filter state otherwise).
+     *
+     * @return list<int>
+     */
+    protected static function defaultFilterValues(mixed $livewire, string $field): array
+    {
+        $value = null;
+
+        if ($livewire instanceof AttendanceOverview) {
+            $value = match ($field) {
+                'employee_id'   => $livewire->employeeId,
+                'department_id' => $livewire->departmentId,
+                'calendar_id'   => $livewire->calendarId,
+                default         => null,
+            };
+        } elseif (method_exists($livewire, 'getTableFilterState')) {
+            $state = $livewire->getTableFilterState($field);
+            $value = $state['value'] ?? $state['values'] ?? null;
+        }
+
+        return collect((array) $value)
+            ->filter(fn (mixed $id): bool => filled($id))
+            ->map(fn (mixed $id): int => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Filament places the column picker above the exporter's own options.
+     * Export flows ask for the filter fields first, so move the
+     * `columnMap` fieldset to the end while reusing the native components.
+     */
+    public static function configureExportAction(ExportAction|ExportBulkAction $action): ExportAction|ExportBulkAction
+    {
+        $schemaContainer = $action->getSchema(Schema::make());
+        $components = $schemaContainer?->getComponents() ?? [];
+
+        if (empty($components)) {
+            return $action;
+        }
+
+        $action->modalWidth('2xl');
+
+        if ($action->hasColumnMapping()) {
+            $action->columnMappingColumns(2);
+        }
+
+        return $action->schema(function (ExportAction|ExportBulkAction $action) use ($components): array {
+            $current = $components;
+
+            // A selected-rows export never applies the range/scope fields
+            // (it exports exactly the chosen records), so keep only the
+            // column picker instead of demanding date bounds it ignores.
+            if ($action instanceof ExportBulkAction) {
+                return array_values(array_filter(
+                    $current,
+                    fn (mixed $component): bool => $component instanceof Fieldset,
+                ));
+            }
+
+            // Filament puts the columnMap fieldset first; move it last so the
+            // filter fields render on top of the modal.
+            if ($action->hasColumnMapping() && ($current[0] ?? null) instanceof Fieldset) {
+                $current[] = array_shift($current);
+            }
+
+            return $current;
+        });
     }
 }

@@ -3,67 +3,73 @@
 namespace Webkul\BiometricAttendance\Console;
 
 use Illuminate\Console\Command;
-use Throwable;
-use Webkul\BiometricAttendance\Models\Device;
-use Webkul\BiometricAttendance\Services\DeviceSyncService;
-use Webkul\BiometricAttendance\Services\ZktecoConnectionException;
+use Illuminate\Support\Facades\Cache;
+use Webkul\BiometricAttendance\Services\SyncPipeline;
 
 class SyncAllCommand extends Command
 {
-    protected $signature = 'biometric:sync-all';
+    protected $signature = 'biometric:sync-all
+        {--chain : Also push matched punches and pair attendance rows}
+        {--company=* : Limit the run to specific company IDs (default: every company)}';
 
     protected $description = 'Sync attendance logs from all active devices (one offline device never blocks the rest)';
 
-    public function handle(DeviceSyncService $service): int
+    public function handle(SyncPipeline $pipeline): int
     {
-        $devices = Device::query()
-            ->where('is_active', true)
-            ->orderBy('id')
-            ->get();
+        $lock = Cache::lock('biometric:sync-all', 600);
 
-        if ($devices->isEmpty()) {
+        if (! $lock->get()) {
+            $this->warn('Another biometric sync is already running. Skipping.');
+
+            return self::SUCCESS;
+        }
+
+        try {
+            $companyIds = collect((array) $this->option('company'))
+                ->map(fn (mixed $id): int => (int) $id)
+                ->filter()
+                ->unique()
+                ->values()
+                ->all();
+
+            $summary = $pipeline->syncAll(
+                (bool) $this->option('chain'),
+                $companyIds === [] ? null : $companyIds,
+            );
+        } finally {
+            $lock->release();
+        }
+
+        if ($summary['total'] === 0) {
             $this->warn('No active devices found.');
 
             return self::SUCCESS;
         }
 
-        $stored = 0;
-        $skipped = 0;
-        $backfilled = 0;
-        $failed = 0;
-
-        foreach ($devices as $device) {
-            try {
-                $result = $service->sync($device);
-            } catch (ZktecoConnectionException $e) {
-                $device->update(['last_error' => $e->getMessage()]);
-
-                $failed++;
-
-                $this->error("[{$device->name}] {$e->getMessage()}");
-
-                continue;
-            } catch (Throwable $e) {
-                $device->update(['last_error' => $e->getMessage()]);
-
-                $failed++;
-
-                $this->error("[{$device->name}] {$e->getMessage()}");
+        foreach ($summary['devices'] as $device) {
+            if ($device['error'] !== null) {
+                $this->error("[{$device['name']}] {$device['error']}");
 
                 continue;
             }
 
-            $stored += $result['stored'];
-            $skipped += $result['skipped'];
-            $backfilled += $result['backfilled'];
+            $result = $device['result'];
 
-            $this->info("[{$device->name}] stored: {$result['stored']}, already present: {$result['skipped']}, backfilled: {$result['backfilled']}.");
+            $this->info("[{$device['name']}] stored: {$result['stored']}, already present: {$result['skipped']}, backfilled: {$result['backfilled']}.");
         }
 
-        $succeeded = $devices->count() - $failed;
+        foreach ($summary['push_errors'] as $error) {
+            $this->error($error);
+        }
 
-        $this->info("Synced {$succeeded}/{$devices->count()} devices — stored: {$stored}, already present: {$skipped}, backfilled: {$backfilled}, failed: {$failed}.");
+        $line = "Synced {$summary['succeeded']}/{$summary['total']} devices — stored: {$summary['stored']}, already present: {$summary['skipped']}, backfilled: {$summary['backfilled']}, failed: {$summary['failed']}.";
 
-        return $failed === 0 ? self::SUCCESS : self::FAILURE;
+        if ($this->option('chain')) {
+            $line .= " Pushed: {$summary['pushed']}, push failed: {$summary['push_failed']}.";
+        }
+
+        $this->info($line);
+
+        return $summary['failed'] === 0 ? self::SUCCESS : self::FAILURE;
     }
 }

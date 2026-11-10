@@ -18,6 +18,7 @@ use Webkul\Attendance\Filament\Widgets\AttendanceStatsWidget;
 use Webkul\Attendance\Filament\Widgets\TodayAttendanceWidget;
 use Webkul\Attendance\Models\Attendance;
 use Webkul\Attendance\Policies\AttendancePolicy;
+use Webkul\Attendance\Settings\AttendanceSettings;
 use Webkul\Attendance\Writers\WriterRegistry;
 use Webkul\Employee\Filament\Resources\EmployeeResource;
 use Webkul\Employee\Models\Employee;
@@ -148,6 +149,8 @@ it('exposes the expected exporter columns', function () {
         'check_in',
         'check_out',
         'worked_minutes',
+        'break_minutes',
+        'is_estimated',
         'source',
     ]);
 });
@@ -186,12 +189,16 @@ it('maps persisted rows to export values on the employee wall clock', function (
         '2026-09-24 08:00:00',
         '2026-09-24 16:00:00',
         '8h 0m',
+        '00:00',
+        '',
         'Main Gate',
     ])->and($exporter($open->refresh()))->toBe([
         $riyadhEmployee->name,
         '2026-09-25',
         '2026-09-25 08:00:00',
         '',
+        '',
+        '00:00',
         '',
         'Manual',
     ]);
@@ -364,7 +371,7 @@ it('paginates the attendances list at twenty-five rows with shared page sizes', 
         ->assertCanNotSeeTableRecords($rows->take(25)->all());
 });
 
-it('only allows completing open rows and fresh manual corrections', function () {
+it('allows updating open rows and manual corrections when not locked', function () {
     $user = FilamentHelper::actingAs(['update_attendance_attendance']);
 
     $employeeId = Employee::factory()->create(['user_id' => User::factory()])->id;
@@ -406,7 +413,7 @@ it('only allows completing open rows and fresh manual corrections', function () 
     expect($user->can('update', $openDeviceRow))->toBeTrue()
         ->and($user->can('update', $closedDeviceRow))->toBeFalse()
         ->and($user->can('update', $freshManualRow))->toBeTrue()
-        ->and($user->can('update', $oldManualRow))->toBeFalse();
+        ->and($user->can('update', $oldManualRow))->toBeTrue();
 });
 
 it('only allows deleting manual rows so old ones are fixed via delete and recreate', function () {
@@ -931,7 +938,9 @@ it('accepts a next-day check-out within 16 hours but rejects longer shifts', fun
             'check_out'   => $tomorrow.' 06:00:00',
         ])
         ->call('create')
-        ->assertHasFormErrors(['check_out' => __('attendance::filament/resources/attendance.form.check-out-not-in-work-date')]);
+        ->assertHasFormErrors(['check_out' => __('attendance::filament/resources/attendance.form.check-out-not-in-work-date', [
+            'hours' => AttendanceSettings::maxShiftHours(),
+        ])]);
 
     expect(Attendance::where('employee_id', $otherEmployee->id)->count())->toBe(0);
 });
@@ -1033,7 +1042,9 @@ it('rejects a check-out more than 16 hours after check-in through the checkout a
 
     Livewire::test(ListAttendances::class)
         ->callTableAction('add_checkout', $attendance, data: ['check_out' => $tomorrow.' 02:00:00'])
-        ->assertHasErrors(['check_out' => __('attendance::filament/resources/attendance.form.check-out-not-in-work-date')]);
+        ->assertHasErrors(['check_out' => __('attendance::filament/resources/attendance.form.check-out-not-in-work-date', [
+            'hours' => AttendanceSettings::maxShiftHours(),
+        ])]);
 
     expect($attendance->refresh()->check_out)->toBeNull();
 });

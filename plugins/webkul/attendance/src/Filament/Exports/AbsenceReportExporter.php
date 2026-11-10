@@ -8,6 +8,8 @@ use Filament\Actions\Exports\Models\Export;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Webkul\Attendance\Filament\Exports\Concerns\HasAbsenceExportOptions;
+use Webkul\Attendance\Filament\Tables\AttendanceRegisterTable;
+use Webkul\Attendance\Policies\AttendancePolicy;
 use Webkul\Attendance\Services\AttendanceOverviewService;
 use Webkul\Employee\Models\Employee;
 use Webkul\Support\Services\CompanyContext;
@@ -67,7 +69,7 @@ class AbsenceReportExporter extends Exporter
     {
         $ids = app(CompanyContext::class)->activeIds();
 
-        return AttendanceOverviewService::scopeEligibleEmployees($query)
+        return AttendancePolicy::scopeEmployeeQuery(AttendanceOverviewService::scopeEligibleEmployees($query))
             ->when(
                 $ids !== [],
                 fn (Builder $query) => $query->where(
@@ -78,7 +80,15 @@ class AbsenceReportExporter extends Exporter
             )
             ->when(
                 $options['employee_id'] ?? null,
-                fn (Builder $query, mixed $employeeId) => $query->whereKey($employeeId)
+                fn (Builder $query, mixed $employeeId) => $query->whereKey((array) $employeeId)
+            )
+            ->when(
+                $options['department_id'] ?? null,
+                fn (Builder $query, mixed $departmentId) => AttendanceOverviewService::scopeByDepartment($query, (array) $departmentId)
+            )
+            ->when(
+                $options['calendar_id'] ?? null,
+                fn (Builder $query, mixed $calendarId) => AttendanceOverviewService::scopeByCalendar($query, (array) $calendarId)
             )
             ->orderBy('name');
     }
@@ -98,20 +108,20 @@ class AbsenceReportExporter extends Exporter
                 ->label(__('attendance::filament/exports/absence-report.columns.employee')),
             ExportColumn::make('workdays')
                 ->label(__('attendance::filament/exports/absence-report.columns.workdays'))
-                ->formatStateUsing(fn (Employee $record, array $options, self $exporter): int => $exporter->summaryFor($record, $options)['workdays']),
+                ->formatStateUsing(fn (Employee $record, array $options, self $exporter): int|float => $exporter->summaryFor($record, $options)['workdays']),
             ExportColumn::make('present')
                 ->label(__('attendance::filament/exports/absence-report.columns.present'))
-                ->formatStateUsing(fn (Employee $record, array $options, self $exporter): int => $exporter->summaryFor($record, $options)['present']),
+                ->formatStateUsing(fn (Employee $record, array $options, self $exporter): int|float => $exporter->summaryFor($record, $options)['present']),
             ExportColumn::make('absent')
                 ->label(__('attendance::filament/exports/absence-report.columns.absent'))
-                ->formatStateUsing(fn (Employee $record, array $options, self $exporter): int => $exporter->summaryFor($record, $options)['absent']),
+                ->formatStateUsing(fn (Employee $record, array $options, self $exporter): int|float => $exporter->summaryFor($record, $options)['absent']),
             ExportColumn::make('absence_rate')
                 ->label(__('attendance::filament/exports/absence-report.columns.absence-rate'))
                 ->formatStateUsing(fn (Employee $record, array $options, self $exporter): string => self::formatRate($exporter->summaryFor($record, $options)['absence_rate'])),
             ExportColumn::make('on_leave')
                 ->label(__('attendance::filament/exports/absence-report.columns.on-leave'))
                 ->enabledByDefault(false)
-                ->formatStateUsing(fn (Employee $record, array $options, self $exporter): int => $exporter->summaryFor($record, $options)['on_leave']),
+                ->formatStateUsing(fn (Employee $record, array $options, self $exporter): int|float => $exporter->summaryFor($record, $options)['on_leave']),
             ExportColumn::make('holidays')
                 ->label(__('attendance::filament/exports/absence-report.columns.holidays'))
                 ->enabledByDefault(false)
@@ -124,6 +134,30 @@ class AbsenceReportExporter extends Exporter
                 ->label(__('attendance::filament/exports/absence-report.columns.minutes'))
                 ->enabledByDefault(false)
                 ->formatStateUsing(fn (Employee $record, array $options, self $exporter): int => $exporter->summaryFor($record, $options)['minutes']),
+            ExportColumn::make('scheduled_minutes')
+                ->label(__('attendance::filament/exports/absence-report.columns.scheduled-hours'))
+                ->enabledByDefault(false)
+                ->formatStateUsing(fn (Employee $record, array $options, self $exporter): string => AttendanceRegisterTable::formatMinutesToHours($exporter->summaryFor($record, $options)['scheduled_minutes'])),
+            ExportColumn::make('regular_minutes')
+                ->label(__('attendance::filament/exports/absence-report.columns.regular-hours'))
+                ->enabledByDefault(false)
+                ->formatStateUsing(fn (Employee $record, array $options, self $exporter): string => AttendanceRegisterTable::formatMinutesToHours($exporter->summaryFor($record, $options)['regular_minutes'])),
+            ExportColumn::make('overtime_minutes')
+                ->label(__('attendance::filament/exports/absence-report.columns.overtime-hours'))
+                ->enabledByDefault(false)
+                ->formatStateUsing(fn (Employee $record, array $options, self $exporter): string => AttendanceRegisterTable::formatMinutesToHours($exporter->summaryFor($record, $options)['overtime_minutes'])),
+            ExportColumn::make('late_minutes')
+                ->label(__('attendance::filament/exports/absence-report.columns.late-minutes'))
+                ->enabledByDefault(false)
+                ->formatStateUsing(fn (Employee $record, array $options, self $exporter): int => $exporter->summaryFor($record, $options)['late_minutes']),
+            ExportColumn::make('early_leave_minutes')
+                ->label(__('attendance::filament/exports/absence-report.columns.early-leave-minutes'))
+                ->enabledByDefault(false)
+                ->formatStateUsing(fn (Employee $record, array $options, self $exporter): int => $exporter->summaryFor($record, $options)['early_leave_minutes']),
+            ExportColumn::make('variance_minutes')
+                ->label(__('attendance::filament/exports/absence-report.columns.variance-hours'))
+                ->enabledByDefault(false)
+                ->formatStateUsing(fn (Employee $record, array $options, self $exporter): string => AttendanceRegisterTable::formatMinutesToHours($exporter->summaryFor($record, $options)['variance_minutes'], true)),
         ];
     }
 

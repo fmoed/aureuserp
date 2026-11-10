@@ -7,6 +7,8 @@ return [
         'check-in'  => 'Entrada',
         'check-out' => 'Salida',
         'worked'    => 'Trabajado',
+        'break'     => 'Descanso',
+        'estimated' => 'Estimado',
         'source'    => 'Fuente',
     ],
 

@@ -22,6 +22,7 @@ use Webkul\Attendance\Settings\AttendanceSettings;
 use Webkul\Attendance\Writers\WriterRegistry;
 use Webkul\Employee\Filament\Resources\EmployeeResource;
 use Webkul\Employee\Models\Employee;
+use Webkul\Security\Enums\PermissionType;
 use Webkul\Security\Models\User;
 use Webkul\Support\Enums\NavigationGroup;
 use Webkul\Support\Models\Calendar;
@@ -41,9 +42,13 @@ beforeEach(function () {
  * Panel pages go through panel authorization, which requires an active
  * user (unlike resource policy tests). Real admins are always active.
  */
-function actingAsOverviewUser(array $permissions = ['page_attendance_attendance_overview']): void
+function actingAsOverviewUser(array $permissions = ['page_attendance_attendance_overview'], ?Company $company = null): void
 {
-    FilamentHelper::actingAs($permissions)->forceFill(['is_active' => true])->saveQuietly();
+    if ($company !== null) {
+        FilamentHelper::actingAsCompanyUser($company, $permissions)->forceFill(['is_active' => true])->saveQuietly();
+    } else {
+        FilamentHelper::actingAs($permissions)->forceFill(['is_active' => true])->saveQuietly();
+    }
 }
 
 function createWeekCalendar(?int $companyId = null): Calendar
@@ -159,16 +164,19 @@ function overviewServiceDataset(): array
 {
     $company = CompanyHelper::company();
 
-    CompanyHelper::actingAsCompanyUser($company);
+    CompanyHelper::actingAsCompanyUser($company)
+        ->forceFill(['resource_permission' => PermissionType::GLOBAL])
+        ->saveQuietly();
 
     return overviewDataset($company);
 }
 
 function overviewPageDataset(): array
 {
-    actingAsOverviewUser();
+    $company = CompanyHelper::company();
+    actingAsOverviewUser(['page_attendance_attendance_overview'], $company);
 
-    return overviewDataset(Company::whereKey(current_company_id())->firstOrFail());
+    return overviewDataset($company);
 }
 
 it('classifies a known week into present, absent, on-leave and holiday days', function () {
@@ -183,7 +191,7 @@ it('classifies a known week into present, absent, on-leave and holiday days', fu
 
     expect($entries->keys()->all())->toBe(['2026-09-07', '2026-09-08', '2026-09-09', '2026-09-10', '2026-09-11'])
         ->and($entries['2026-09-07']['status'])->toBe('present')
-        ->and($entries['2026-09-07']['minutes'])->toBe(540)
+        ->and($entries['2026-09-07']['minutes'])->toBe(480)
         ->and($entries['2026-09-08']['status'])->toBe('absent')
         ->and($entries['2026-09-09']['status'])->toBe('on_leave')
         ->and($entries['2026-09-09']['leave_label'])->toBe('Annual Test Leave')
@@ -292,13 +300,13 @@ it('summarizes counts and the absence rate for the week', function () {
         Carbon::parse('2026-09-07'), Carbon::parse('2026-09-13')
     )->first();
 
-    expect($summary['workdays'])->toBe(2)
+    expect($summary['workdays'])->toBe(2.5)
         ->and($summary['present'])->toBe(1)
-        ->and($summary['absent'])->toBe(1)
-        ->and($summary['on_leave'])->toBe(2)
+        ->and($summary['absent'])->toBe(1.5)
+        ->and($summary['on_leave'])->toBe(1.5)
         ->and($summary['holidays'])->toBe(1)
-        ->and($summary['minutes'])->toBe(540)
-        ->and($summary['absence_rate'])->toBe(50.0);
+        ->and($summary['minutes'])->toBe(480)
+        ->and($summary['absence_rate'])->toBe(60.0);
 });
 
 it('ignores holidays scoped to another company', function () {
@@ -651,11 +659,11 @@ it('renders the overview page for the default current month and restores all day
             ->toContain("content: 'Holiday'")
             ->toContain("content: 'Pending'")
             ->toContain("content: 'Weekly off'")
-            ->not->toContain('87.5%');
+            ->not->toContain('88.2%');
 
         $component
             ->call('showRegisterView', 'totals')
-            ->assertSee('87.5%');
+            ->assertSee('88.2%');
 
         expect($component->html())->not->toMatch(statusCellRegex('P'));
 
@@ -777,12 +785,12 @@ it('excludes holidays and approved leave from the absence denominator', function
         Carbon::parse('2026-09-07'), Carbon::parse('2026-09-13')
     )->first();
 
-    expect($summary['workdays'])->toBe(2)
+    expect($summary['workdays'])->toBe(2.5)
         ->and($summary['present'])->toBe(1)
-        ->and($summary['absent'])->toBe(1)
-        ->and($summary['on_leave'])->toBe(2)
+        ->and($summary['absent'])->toBe(1.5)
+        ->and($summary['on_leave'])->toBe(1.5)
         ->and($summary['holidays'])->toBe(1)
-        ->and($summary['absence_rate'])->toBe(50.0);
+        ->and($summary['absence_rate'])->toBe(60.0);
 });
 
 it('exposes the expected absence exporter columns', function () {
@@ -798,6 +806,12 @@ it('exposes the expected absence exporter columns', function () {
         'holidays',
         'pending',
         'minutes',
+        'scheduled_minutes',
+        'regular_minutes',
+        'overtime_minutes',
+        'late_minutes',
+        'early_leave_minutes',
+        'variance_minutes',
     ]);
 
     $defaults = collect(AbsenceReportExporter::getColumns())
@@ -829,10 +843,10 @@ it('maps the week summary to export values matching the manual shape', function 
 
     expect($exporter($empA->refresh()))->toBe([
         'Overview Emp A',
-        '2',
+        '2.5',
         '1',
-        '1',
-        '50%',
+        '1.5',
+        '60%',
     ]);
 });
 
@@ -846,7 +860,12 @@ it('exposes the detail exporter columns', function () {
         'present',
         'absent',
         'on_leave',
-        'hours',
+        'scheduled-minutes',
+        'worked-minutes',
+        'overtime-minutes',
+        'late-minutes',
+        'early-leave-minutes',
+        'variance-minutes',
         'absence_rate',
     ]);
 });
@@ -1120,7 +1139,7 @@ it('prefills the export options from the applied page filters', function () {
             ->call('showRegisterView', 'totals')
             ->mountAction('export')
             ->assertActionDataSet([
-                'employee_id' => $empA->id,
+                'employee_id' => [$empA->id],
                 'date_from'   => '2026-09-07',
                 'date_to'     => '2026-09-13',
             ]);
@@ -1208,9 +1227,9 @@ it('registers a full month of cells with weekends, half days and future days', f
             ->and($row['cells']['2026-09-13'])->toBe('weekly_off')
             ->and($row['cells']['2026-09-20'])->toBe('future')
             ->and($row['totals']['present'])->toBe(1)
-            ->and($row['totals']['absent'])->toBe(7)
-            ->and($row['totals']['workdays'])->toBe(8)
-            ->and($row['totals']['absence_rate'])->toBe(87.5);
+            ->and($row['totals']['absent'])->toBe(7.5)
+            ->and($row['totals']['workdays'])->toBe(8.5)
+            ->and($row['totals']['absence_rate'])->toBe(88.2);
     } finally {
         Carbon::setTestNow();
     }
@@ -1238,8 +1257,8 @@ it('spans every calendar day of the month with a word in each cell', function ()
             ->and($grid[$empA->id]['cells']['2026-09-08'])->toBe('absent')
             ->and($grid[$empA->id]['cells']['2026-09-11'])->toBe('half_day')
             ->and($grid[$empB->id]['cells']['2026-09-08'])->toBe('pending')
-            ->and($grid[$empA->id]['totals']['absent'])->toBe(7)
-            ->and($grid[$empA->id]['totals']['absence_rate'])->toBe(87.5);
+            ->and($grid[$empA->id]['totals']['absent'])->toBe(7.5)
+            ->and($grid[$empA->id]['totals']['absence_rate'])->toBe(88.2);
     } finally {
         Carbon::setTestNow();
     }
@@ -1320,11 +1339,11 @@ it('summarizes the month with totals, legend and daily trend', function () {
         expect($totals)->toHaveCount(7)
             ->and($totals['Employees']['value'])->toBe(2)
             ->and($totals['Present days']['value'])->toBe(1)
-            ->and($totals['Absent days']['value'])->toBe(17)
-            ->and($totals['Leave days']['value'])->toBe(2)
+            ->and($totals['Absent days']['value'])->toBe(17.5)
+            ->and($totals['Leave days']['value'])->toBe(1.5)
             ->and($totals['Pending']['value'])->toBe(1)
             ->and($totals['Holidays']['value'])->toBe(2)
-            ->and($totals['Absence rate']['value'])->toBe(94.4);
+            ->and($totals['Absence rate']['value'])->toBe(94.6);
 
         $legend = collect($page->getLegend());
 
@@ -1334,7 +1353,10 @@ it('summarizes the month with totals, legend and daily trend', function () {
             'on_leave',
             'half_day',
             'pending',
+            'missing_checkout',
             'holiday',
+            'weekend_present',
+            'holiday_present',
             'weekly_off',
             'future',
         ])
@@ -1430,7 +1452,7 @@ it('aggregates a year into monthly cells and a yearly summary', function () {
         expect($grid[$empA->id]['cells'])->toHaveCount(9)
             ->and($grid[$empA->id]['cells']['2026-09-01']['present'])->toBe(1)
             ->and($grid[$empA->id]['totals']['present'])->toBe(1)
-            ->and($grid[$empA->id]['totals']['on_leave'])->toBe(2)
+            ->and($grid[$empA->id]['totals']['on_leave'])->toBe(1.5)
             ->and($grid[$empA->id]['totals']['holidays'])->toBe(1)
             ->and($grid[$empA->id]['totals']['workdays'])->toBeGreaterThan(100);
     } finally {
@@ -1481,13 +1503,20 @@ it('locks each totals value to its own column in order', function () {
 
         expect($names)->toBe([
             'name',
+            'totals.workdays',
             'totals.present',
             'totals.absent',
             'totals.on_leave',
             'totals.absence_rate',
+            'totals.minutes',
+            'totals.overtime_minutes',
+            'totals.late_minutes',
+            'totals.scheduled_minutes',
+            'totals.variance_minutes',
+            'totals.early_leave_minutes',
+            'totals.missing_checkouts',
             'totals.pending',
             'totals.holidays',
-            'totals.workdays',
             'schedule',
         ])
             ->and($columns->firstWhere(fn ($column): bool => $column->getName() === 'name')->getWidth())->toBe('180px')
@@ -1510,7 +1539,7 @@ it('restores the register tab from the URL and rejects tampered values', functio
         ->assertSet('registerView', 'days');
 });
 
-it('offers the year range only on the summary tab', function () {
+it('offers the year range on the filter form', function () {
     Carbon::setTestNow('2026-09-15 12:00:00');
 
     try {
@@ -1522,7 +1551,7 @@ it('offers the year range only on the summary tab', function () {
 
         $daysOptions = $component->instance()->getSchema('filterForm')->getComponent('view_mode')->getOptions();
 
-        expect(array_keys($daysOptions))->toBe(['month', 'range']);
+        expect(array_keys($daysOptions))->toBe(['month', 'range', 'year']);
 
         $component->call('showRegisterView', 'totals');
 
@@ -1638,7 +1667,7 @@ it('scopes register employees by barcode, registered attendance writer plugin, o
         WriterRegistry::register(
             'remote-attendance',
             fn (): string => 'Remote Attendance',
-            fn ($query)   => $query->where('job_title', 'remote-enrolled'),
+            fn ($query) => $query->where('job_title', 'remote-enrolled'),
         );
 
         $enrolledIds = AttendanceOverviewService::scopeEligibleEmployees(

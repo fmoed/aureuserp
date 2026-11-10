@@ -12,6 +12,10 @@
         $holidaysCount = (int) ($totalsByKey['holidays']['value'] ?? 0);
         $employeesCount = (int) ($totalsByKey['employees']['value'] ?? 0);
         $absenceRate = (float) ($totalsByKey['rate']['value'] ?? 0);
+        $hours = $this->getHoursSummary();
+        $workedHours = \Webkul\Attendance\Filament\Tables\AttendanceRegisterTable::formatMinutesToHours($hours['worked']);
+        $scheduledHours = \Webkul\Attendance\Filament\Tables\AttendanceRegisterTable::formatMinutesToHours($hours['scheduled']);
+        $overtimeHours = \Webkul\Attendance\Filament\Tables\AttendanceRegisterTable::formatMinutesToHours($hours['overtime']);
 
         $totalTrackedDays = max($presentCount + $absentCount + $leaveCount, 1);
         $presentPct = round(($presentCount / $totalTrackedDays) * 100, 1);
@@ -328,6 +332,12 @@
                         {{ $presentPct }}%
                     </span>
                 </div>
+                <div class="mt-0.5 truncate text-[10px] tabular-nums text-gray-500 dark:text-gray-400">
+                    {{ $workedHours }} / {{ $scheduledHours }}
+                    @if ($hours['overtime'] > 0)
+                        <span class="text-emerald-600 dark:text-emerald-400">+{{ $overtimeHours }}</span>
+                    @endif
+                </div>
             </div>
         </div>
 
@@ -353,6 +363,11 @@
                     @if ($pendingCount > 0)
                         <span class="rounded-md bg-amber-50 px-1 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">
                             {{ $totalsByKey['pending']['label'] ?? __('attendance::filament/pages/overview.grid.totals.pending') }}: {{ number_format($pendingCount) }}
+                        </span>
+                    @endif
+                    @if ($hours['missing_checkouts'] > 0)
+                        <span class="rounded-md bg-amber-50 px-1 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">
+                            {{ __('attendance::filament/pages/overview.table.columns.missing-checkouts') }}: {{ number_format($hours['missing_checkouts']) }}
                         </span>
                     @endif
                 </div>
@@ -396,9 +411,11 @@
                     <span class="text-xs font-semibold text-gray-950 dark:text-white">
                         {{ __('attendance::filament/pages/overview.grid.chart') }}
                     </span>
-                    <span class="hidden text-[11px] text-gray-500 sm:inline dark:text-gray-400">
-                        — {{ __('attendance::filament/pages/overview.grid.pending-note') }}
-                    </span>
+                    @if (\Webkul\Attendance\Settings\AttendanceSettings::countPendingLeaveAsAbsent())
+                        <span class="hidden text-[11px] text-gray-500 sm:inline dark:text-gray-400">
+                            — {{ __('attendance::filament/pages/overview.grid.pending-note') }}
+                        </span>
+                    @endif
                 </div>
 
                 <div class="flex items-center gap-3">
@@ -506,12 +523,6 @@
                             <div class="fi-chart-track flex h-16 w-full flex-col justify-end overflow-hidden rounded-t transition-all group-hover:ring-1 group-hover:ring-primary-500/50">
                                 @if ($dayWorking > 0)
                                     <div class="flex h-full w-full flex-col justify-end overflow-hidden rounded-t-xs">
-                                        @if ($dayOff > 0)
-                                            <div
-                                                class="fi-bar-off w-full transition-all"
-                                                style="height: {{ $dayOffPct }}%;"
-                                            ></div>
-                                        @endif
                                         @if ($day['absent'] > 0)
                                             <div
                                                 class="fi-bar-absent w-full transition-all"

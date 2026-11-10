@@ -43,6 +43,7 @@ class ProcessEventsCommand extends Command
                 ->unique(fn (array $group): string => $group['employee_id'].'|'.$group['writer']);
 
             $employees = Employee::query()
+                ->withoutGlobalScope(CompanyScope::class)
                 ->whereKey($groups->pluck('employee_id')->unique()->all())
                 ->get()
                 ->keyBy('id');

@@ -2,10 +2,14 @@
 
 namespace Webkul\BiometricAttendance\Services;
 
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 use Webkul\BiometricAttendance\Contracts\ZktecoClientInterface;
 use Webkul\BiometricAttendance\Models\Device;
 use Webkul\BiometricAttendance\Models\Punch;
 use Webkul\Employee\Models\Employee;
+use Webkul\Support\Models\Scopes\CompanyScope;
 
 class DeviceSyncService
 {
@@ -34,14 +38,22 @@ class DeviceSyncService
         $stored = 0;
         $skipped = 0;
 
-        $employeeIds = $this->employeeIdsByUserId();
+        $employeeIds = $this->employeeIdsByUserId($device);
 
         foreach ($records as $record) {
+            $punchTime = $this->validPunchTime($record->recordTime);
+
+            if ($punchTime === null) {
+                $skipped++;
+
+                continue;
+            }
+
             $uid = (int) $record->uid;
 
             $maxSeen = $maxSeen === null ? $uid : max($maxSeen, $uid);
 
-            if (($watermark !== null && $uid <= $watermark) || $record->recordTime === '') {
+            if ($watermark !== null && $uid <= $watermark) {
                 $skipped++;
 
                 continue;
@@ -51,11 +63,11 @@ class DeviceSyncService
                 [
                     'device_id'  => $device->id,
                     'zk_user_id' => $record->userId,
-                    'punch_time' => $record->recordTime,
+                    'punch_time' => $punchTime,
                 ],
                 [
                     'device_uid'  => $uid,
-                    'employee_id' => $employeeIds[$record->userId] ?? null,
+                    'employee_id' => $employeeIds[static::normalizeUserId((string) $record->userId)] ?? null,
                     'raw_state'   => (int) $record->state,
                     'raw_type'    => (int) $record->type,
                 ]
@@ -65,17 +77,16 @@ class DeviceSyncService
                 $stored++;
             } else {
                 $skipped++;
+
+                // The device renumbered this punch (or the log was rebuilt);
+                // keep the watermark anchor resolving to the stored row.
+                if ((int) $punch->device_uid !== $uid) {
+                    $punch->update(['device_uid' => $uid]);
+                }
             }
         }
 
-        $backfilled = 0;
-
-        foreach ($employeeIds as $userId => $employeeId) {
-            $backfilled += Punch::where('device_id', $device->id)
-                ->whereNull('employee_id')
-                ->where('zk_user_id', (string) $userId)
-                ->update(['employee_id' => $employeeId]);
-        }
+        $backfilled = $this->backfillUnmatched($device, $employeeIds);
 
         $device->update([
             'last_sync_uid' => $maxSeen,
@@ -89,6 +100,103 @@ class DeviceSyncService
             'backfilled' => $backfilled,
             'fetched'    => count($records),
         ];
+    }
+
+    /**
+     * Re-match this device's orphan punches against the current employee
+     * barcodes. Shared by the sync run and the device page's "re-match"
+     * action so both paths use one definition.
+     *
+     * @param  array<string, int>|null  $employeeIds  normalized barcode => employee id
+     */
+    public function backfillUnmatched(Device $device, ?array $employeeIds = null): int
+    {
+        $employeeIds ??= $this->employeeIdsByUserId($device);
+
+        $backfilled = 0;
+
+        $userIds = Punch::query()
+            ->where('device_id', $device->getKey())
+            ->whereNull('employee_id')
+            ->whereNotNull('zk_user_id')
+            ->distinct()
+            ->pluck('zk_user_id');
+
+        foreach ($userIds as $userId) {
+            $employeeId = $employeeIds[static::normalizeUserId((string) $userId)] ?? null;
+
+            if ($employeeId === null) {
+                continue;
+            }
+
+            $backfilled += Punch::query()
+                ->where('device_id', $device->getKey())
+                ->whereNull('employee_id')
+                ->where('zk_user_id', $userId)
+                ->update(['employee_id' => $employeeId]);
+        }
+
+        return $backfilled;
+    }
+
+    /**
+     * Match every stored orphan punch whose device user id equals the
+     * employee's barcode. Runs without any device connection, so a barcode
+     * added (or corrected) in HR immediately recovers the historical
+     * punches already stored locally.
+     */
+    public function backfillForEmployee(Employee $employee): int
+    {
+        $barcode = trim((string) $employee->barcode);
+
+        if ($barcode === '') {
+            return 0;
+        }
+
+        $normalizedBarcode = static::normalizeUserId($barcode);
+
+        $deviceQuery = fn ($query) => $query->when(
+            $employee->company_id !== null,
+            fn ($inner) => $inner->where(
+                fn ($company) => $company->where('company_id', $employee->company_id)->orWhereNull('company_id')
+            ),
+        );
+
+        $userIds = Punch::query()
+            ->whereNull('employee_id')
+            ->whereNotNull('zk_user_id')
+            ->whereHas('device', $deviceQuery)
+            ->distinct()
+            ->pluck('zk_user_id')
+            ->filter(fn (mixed $userId): bool => static::normalizeUserId((string) $userId) === $normalizedBarcode)
+            ->values()
+            ->all();
+
+        if ($userIds === []) {
+            return 0;
+        }
+
+        return Punch::query()
+            ->whereNull('employee_id')
+            ->whereIn('zk_user_id', $userIds)
+            ->update(['employee_id' => $employee->getKey()]);
+    }
+
+    /**
+     * Re-match orphans across every device, used by the sync chain so a
+     * device that is offline never blocks matching punches already stored.
+     */
+    public function backfillAllUnmatched(): int
+    {
+        $backfilled = 0;
+
+        Device::withoutGlobalScope(CompanyScope::class)
+            ->orderBy('id')
+            ->each(function (Device $device) use (&$backfilled): void {
+                $backfilled += $this->backfillUnmatched($device);
+            });
+
+        return $backfilled;
     }
 
     /**
@@ -130,25 +238,70 @@ class DeviceSyncService
     }
 
     /**
-     * Exact barcode => employee id. On duplicates the oldest employee
-     * (lowest id) wins silently for HR cleanup.
+     * Strip surrounding spaces and leading zeros so `00111` and `111`
+     * resolve to the same device user.
+     */
+    public static function normalizeUserId(string $userId): string
+    {
+        return ltrim(trim($userId), '0') ?: '0';
+    }
+
+    /**
+     * Normalized `Y-m-d H:i:s` wall-clock value, or null when the device
+     * returned an empty or corrupt stamp (`0000-00-00 00:00:00`). The
+     * round trip rejects dates the parser silently normalizes.
+     */
+    protected function validPunchTime(mixed $value): ?string
+    {
+        $value = trim((string) $value);
+
+        if ($value === '') {
+            return null;
+        }
+
+        try {
+            $parsed = Carbon::createFromFormat('Y-m-d H:i:s', $value);
+        } catch (Throwable) {
+            return null;
+        }
+
+        return $parsed->format('Y-m-d H:i:s') === $value ? $value : null;
+    }
+
+    /**
+     * Normalized barcode => employee id. When a device is given, employees
+     * are limited to that device's company (plus unassigned employees). On
+     * duplicates the oldest employee (lowest id) wins and a warning is logged
+     * for HR cleanup.
      *
      * @return array<string, int>
      */
-    protected function employeeIdsByUserId(): array
+    public function employeeIdsByUserId(?Device $device = null): array
     {
         $map = [];
 
-        $barcodes = Employee::query()
+        $query = Employee::query()
+            ->withoutGlobalScope(CompanyScope::class)
             ->whereNotNull('barcode')
             ->where('barcode', '!=', '')
-            ->orderBy('id')
-            ->pluck('barcode', 'id');
+            ->orderBy('id');
 
-        foreach ($barcodes as $employeeId => $barcode) {
-            $key = (string) $barcode;
+        if ($device?->company_id) {
+            $query->where(fn ($query) => $query
+                ->where('company_id', $device->company_id)
+                ->orWhereNull('company_id'));
+        }
+
+        foreach ($query->pluck('barcode', 'id') as $employeeId => $barcode) {
+            $key = static::normalizeUserId((string) $barcode);
 
             if (array_key_exists($key, $map)) {
+                Log::warning('Duplicate employee barcode encountered during biometric matching.', [
+                    'barcode'          => $key,
+                    'employee_id'      => $employeeId,
+                    'kept_employee_id' => $map[$key],
+                ]);
+
                 continue;
             }
 

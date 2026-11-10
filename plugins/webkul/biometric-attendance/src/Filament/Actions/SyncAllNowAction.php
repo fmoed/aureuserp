@@ -5,13 +5,19 @@ namespace Webkul\BiometricAttendance\Filament\Actions;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\Artisan;
-use Webkul\BiometricAttendance\Services\AttendanceBridge;
+use Webkul\Support\Services\CompanyContext;
 
 class SyncAllNowAction extends Action
 {
     public static function getDefaultName(): ?string
     {
         return 'syncAllNow';
+    }
+
+    public static function canRunSync(): bool
+    {
+        return (bool) (auth()->user()?->can('update_biometric_attendance_device')
+            || auth()->user()?->can('page_biometric_attendance_manage_sync'));
     }
 
     protected function setUp(): void
@@ -22,16 +28,19 @@ class SyncAllNowAction extends Action
             ->label(__('biometric-attendance::filament/actions/sync-all-now.label'))
             ->icon('heroicon-o-arrow-down-tray')
             ->color('success')
+            ->visible(fn (): bool => static::canRunSync())
+            ->authorize(fn (): bool => static::canRunSync())
+            ->requiresConfirmation()
             ->action(function (): void {
-                $exit = Artisan::call('biometric:sync-all');
+                $companyIds = app(CompanyContext::class)->activeIds();
 
-                if ($exit === 0) {
-                    Artisan::call('biometric:push-events');
+                $options = ['--chain' => true];
 
-                    if (AttendanceBridge::isAvailable()) {
-                        Artisan::call('attendance:process-events');
-                    }
+                if ($companyIds !== []) {
+                    $options['--company'] = $companyIds;
                 }
+
+                $exit = Artisan::call('biometric:sync-all', $options);
 
                 if ($exit !== 0) {
                     Notification::make()

@@ -2,7 +2,9 @@
 
 namespace Webkul\Attendance\Filament\Resources\AttendanceEventResource\Tables;
 
+use Filament\Actions\BulkActionGroup;
 use Filament\Actions\ExportAction;
+use Filament\Actions\ExportBulkAction;
 use Filament\Forms\Components\DatePicker;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\Filter;
@@ -11,10 +13,15 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Webkul\Attendance\Filament\Exports\AttendanceEventExporter;
+use Webkul\Attendance\Filament\Resources\AttendanceEventResource;
 use Webkul\Attendance\Models\Attendance;
 use Webkul\Attendance\Models\AttendanceEvent;
+use Webkul\Attendance\Policies\AttendanceEventPolicy;
+use Webkul\Attendance\Policies\AttendancePolicy;
 use Webkul\Attendance\Services\AttendanceOverviewService;
+use Webkul\Attendance\Writers\WriterRegistry;
 use Webkul\Employee\Filament\Resources\EmployeeResource;
+use Webkul\Support\Models\Calendar;
 
 class AttendanceEventsTable
 {
@@ -77,13 +84,40 @@ class AttendanceEventsTable
         return abs(Carbon::parse($from)->diffInDays($to)) > AttendanceOverviewService::MAX_RANGE_DAYS;
     }
 
+    protected static ?array $cachedSources = null;
+
+    public static function sourceOptions(): array
+    {
+        if (static::$cachedSources !== null) {
+            return static::$cachedSources;
+        }
+
+        $options = [];
+
+        foreach (WriterRegistry::slugs() as $slug) {
+            $options[$slug] = WriterRegistry::resolveLabel($slug) ?? Attendance::sourceDisplayName($slug, null);
+        }
+
+        $dbSources = AttendanceEventPolicy::scopeQuery(AttendanceEvent::query())
+            ->select('source')
+            ->selectRaw('MAX(source_label) AS source_label')
+            ->groupBy('source')
+            ->get()
+            ->mapWithKeys(fn (AttendanceEvent $row) => [
+                $row->source => Attendance::sourceDisplayName($row->source, $row->source_label),
+            ])
+            ->all();
+
+        return static::$cachedSources = array_merge($options, $dbSources);
+    }
+
     public static function configure(Table $table): Table
     {
         return $table
             ->defaultSort('punched_at', 'desc')
             ->defaultPaginationPageOption(25)
             ->paginated([10, 25, 50])
-            ->modifyQueryUsing(fn ($query) => $query->with(['employee', 'attendance']))
+            ->modifyQueryUsing(fn (Builder $query): Builder => AttendanceEventPolicy::scopeQuery($query)->with(['employee', 'attendance']))
             ->columns([
                 TextColumn::make('employee.name')
                     ->label(__('attendance::filament/resources/attendance-event.table.columns.employee'))
@@ -135,23 +169,60 @@ class AttendanceEventsTable
                     }),
                 SelectFilter::make('employee_id')
                     ->label(__('attendance::filament/resources/attendance-event.table.filters.employee'))
-                    ->relationship('employee', 'name')
+                    ->relationship(
+                        'employee',
+                        'name',
+                        modifyQueryUsing: fn (Builder $query): Builder => AttendancePolicy::scopeEmployeeQuery($query),
+                    )
                     ->searchable()
-                    ->preload(),
+                    ->multiple(),
+                SelectFilter::make('department_id')
+                    ->label(__('attendance::filament/resources/attendance-event.table.filters.department'))
+                    ->options(fn (): array => AttendanceOverviewService::departmentOptions())
+                    ->searchable()
+                    ->multiple()
+                    ->query(function (Builder $query, array $data): Builder {
+                        $departmentIds = $data['values'] ?? ($data['value'] ?? []);
+
+                        return $query->when(
+                            filled($departmentIds),
+                            fn (Builder $query) => $query->whereHas(
+                                'employee',
+                                fn (Builder $employee) => AttendanceOverviewService::scopeByDepartment($employee, (array) $departmentIds),
+                            ),
+                        );
+                    }),
+                SelectFilter::make('calendar_id')
+                    ->label(__('attendance::filament/resources/attendance-event.table.filters.calendar'))
+                    ->options(fn (): array => Calendar::query()->orderBy('name')->pluck('name', 'id')->all())
+                    ->searchable()
+                    ->multiple()
+                    ->query(function (Builder $query, array $data): Builder {
+                        $calendarIds = $data['values'] ?? ($data['value'] ?? []);
+
+                        return $query->when(
+                            filled($calendarIds),
+                            fn (Builder $query) => $query->whereHas(
+                                'employee',
+                                fn (Builder $employee) => AttendanceOverviewService::scopeByCalendar($employee, (array) $calendarIds),
+                            ),
+                        );
+                    }),
                 SelectFilter::make('source')
                     ->label(__('attendance::filament/resources/attendance-event.table.filters.source'))
-                    ->options(fn (): array => AttendanceEvent::query()
-                        ->select('source')
-                        ->selectRaw('MAX(source_label) AS source_label')
-                        ->groupBy('source')
-                        ->get()
-                        ->mapWithKeys(fn (AttendanceEvent $row) => [
-                            $row->source => Attendance::sourceDisplayName($row->source, $row->source_label),
-                        ])
-                        ->all()),
+                    ->options(fn (): array => static::sourceOptions())
+                    ->multiple()
+                    ->query(function (Builder $query, array $data): Builder {
+                        $sources = $data['values'] ?? ($data['value'] ?? []);
+
+                        return $query->when(
+                            filled($sources),
+                            fn (Builder $query) => $query->whereIn('source', (array) $sources),
+                        );
+                    }),
                 Filter::make('punched_at')
                     ->label(__('attendance::filament/resources/attendance-event.table.filters.punched-at'))
-                    ->form([
+                    ->schema([
                         DatePicker::make('punched_from')
                             ->label(__('attendance::filament/resources/attendance-event.table.filters.date-from')),
                         DatePicker::make('punched_to')
@@ -168,12 +239,27 @@ class AttendanceEventsTable
                     }),
             ])
             ->toolbarActions([
-                ExportAction::make()
-                    ->label(__('attendance::filament/resources/attendance-event.table.toolbar-actions.export'))
-                    ->icon('heroicon-o-arrow-up-tray')
-                    ->exporter(AttendanceEventExporter::class)
-                    ->maxRows(self::EXPORT_MAX_ROWS)
-                    ->modifyQueryUsing(fn (Builder $query, array $options): Builder => AttendanceEventExporter::scopeQuery($query, $options)),
+                BulkActionGroup::make([
+                    AttendanceEventExporter::configureExportAction(
+                        ExportBulkAction::make()
+                            ->label(__('attendance::filament/resources/attendance-event.table.toolbar-actions.export-selected'))
+                            ->icon('heroicon-o-arrow-up-tray')
+                            ->exporter(AttendanceEventExporter::class)
+                            ->maxRows(self::EXPORT_MAX_ROWS)
+                            ->visible(fn (): bool => AttendanceEventResource::canViewAny())
+                            ->authorize(fn (): bool => AttendanceEventResource::canViewAny()),
+                    ),
+                ]),
+                AttendanceEventExporter::configureExportAction(
+                    ExportAction::make()
+                        ->label(__('attendance::filament/resources/attendance-event.table.toolbar-actions.export'))
+                        ->icon('heroicon-o-arrow-up-tray')
+                        ->exporter(AttendanceEventExporter::class)
+                        ->maxRows(self::EXPORT_MAX_ROWS)
+                        ->visible(fn (): bool => AttendanceEventResource::canViewAny())
+                        ->authorize(fn (): bool => AttendanceEventResource::canViewAny())
+                        ->modifyQueryUsing(fn (Builder $query, array $options): Builder => AttendanceEventExporter::scopeQuery($query, $options)),
+                ),
             ]);
     }
 }

@@ -40,7 +40,12 @@ class PrepareAbsenceDetailExport extends PrepareCsvExport
             __('attendance::filament/exports/absence-detail.columns.present'),
             __('attendance::filament/exports/absence-detail.columns.absent'),
             __('attendance::filament/exports/absence-detail.columns.on-leave'),
-            __('attendance::filament/exports/absence-detail.columns.hours'),
+            __('attendance::filament/exports/absence-detail.columns.scheduled-minutes'),
+            __('attendance::filament/exports/absence-detail.columns.worked-minutes'),
+            __('attendance::filament/exports/absence-detail.columns.overtime-minutes'),
+            __('attendance::filament/exports/absence-detail.columns.late-minutes'),
+            __('attendance::filament/exports/absence-detail.columns.early-leave-minutes'),
+            __('attendance::filament/exports/absence-detail.columns.variance-minutes'),
             __('attendance::filament/exports/absence-detail.columns.absence-rate'),
         ];
 
@@ -61,8 +66,7 @@ class PrepareAbsenceDetailExport extends PrepareCsvExport
         $query = EloquentSerializeFacade::unserialize($this->query);
         $employees = $query->get();
 
-        $matrix = app(AttendanceOverviewService::class)->register($employees, $from, $to);
-        $employeeIds = $matrix->pluck('employee_id')->all();
+        $employeeIds = app(AttendanceOverviewService::class)->employeeIdsWithWorkdays($employees, $from, $to);
         $rowCount = count($employeeIds);
 
         // We do not want to send the loaded user relationship to the queue in job payloads.

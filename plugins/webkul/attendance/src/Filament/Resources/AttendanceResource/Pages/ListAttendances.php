@@ -4,6 +4,7 @@ namespace Webkul\Attendance\Filament\Resources\AttendanceResource\Pages;
 
 use Filament\Actions\CreateAction;
 use Filament\Resources\Pages\ListRecords;
+use Webkul\Attendance\Filament\Actions\RebuildAttendanceAction;
 use Webkul\Attendance\Filament\Resources\AttendanceResource;
 use Webkul\Attendance\Filament\Widgets\AttendanceStatsWidget;
 
@@ -21,6 +22,7 @@ class ListAttendances extends ListRecords
     protected function getHeaderActions(): array
     {
         return [
+            RebuildAttendanceAction::make(),
             CreateAction::make(),
         ];
     }

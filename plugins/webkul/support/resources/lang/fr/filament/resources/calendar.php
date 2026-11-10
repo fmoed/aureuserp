@@ -25,6 +25,47 @@ return [
                     'timezone'              => 'Fuseau horaire',
                     'timezone-tooltip'      => 'Veuillez sélectionner le fuseau horaire du planning de travail.',
                     'company'               => 'Société',
+                    'shift-type'            => 'Type de poste',
+                ],
+            ],
+
+            'windows' => [
+                'title'          => "Fenêtres d'entrée / sortie et appairage",
+                'description'    => "Fenêtres d'acceptation qui déterminent les pointages rattachés à ce poste, y compris les postes de nuit qui franchissent minuit.",
+                'minutes-suffix' => 'minutes',
+                'overlap-error'  => "La durée du poste et les deux fenêtres d'acceptation doivent rester sous 24 heures.",
+                'fields'         => [
+                    'pairing-mode'    => "Mode d'appairage des pointages",
+                    'check-in-before' => "Fenêtre d'entrée avant le poste",
+                    'check-out-after' => 'Fenêtre de sortie après le poste',
+                ],
+            ],
+
+            'punctuality' => [
+                'title'       => 'Ponctualité et arrivée anticipée',
+                'description' => "Périodes de grâce et interaction entre l'arrivée anticipée et le départ anticipé.",
+                'fields'      => [
+                    'late-grace'           => 'Tolérance de retard',
+                    'early-leave-grace'    => 'Tolérance de départ anticipé',
+                    'early-arrival-policy' => "Politique d'arrivée anticipée",
+                    'max-early-offset'     => "Décalage maximal d'arrivée anticipée",
+                ],
+            ],
+
+            'policies' => [
+                'title'       => 'Pauses, jours fériés, sorties manquantes et heures supplémentaires',
+                'description' => "Déduction des pauses, jours fériés, pointages incomplets, seuil de demi-journée et règles d'heures supplémentaires.",
+                'fields'      => [
+                    'break-policy'             => 'Politique de pause',
+                    'break-duration'           => 'Durée de la pause',
+                    'break-trigger'            => 'Déclencheur de pause',
+                    'holiday-policy'           => 'Politique des jours fériés',
+                    'missing-checkout-policy'  => 'Politique de sortie manquante',
+                    'missing-checkout-inherit' => 'Hériter des paramètres de présence',
+                    'half-day-threshold'       => 'Seuil de demi-journée',
+                    'absent-threshold'         => "Seuil d'absence",
+                    'overtime-enabled'         => 'Activer les heures supplémentaires',
+                    'min-overtime'             => 'Heures supplémentaires minimales',
                 ],
             ],
 

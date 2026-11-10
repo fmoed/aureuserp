@@ -4,16 +4,21 @@ namespace Webkul\Attendance\Filament\Pages;
 
 use BackedEnum;
 use BezhanSalleh\FilamentShield\Traits\HasPageShield;
+use Filament\Actions\Action;
 use Filament\Actions\ExportAction;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Concerns\InteractsWithForms;
 use Filament\Forms\Contracts\HasForms;
+use Filament\Infolists\Components\TextEntry;
 use Filament\Pages\Page;
 use Filament\Panel;
 use Filament\Schemas\Components\Component;
+use Filament\Schemas\Components\Grid;
+use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
+use Filament\Support\Enums\Width;
 use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Filters\Indicator;
@@ -24,13 +29,26 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Livewire\Attributes\Locked;
 use Livewire\Attributes\Url;
+use Webkul\Attendance\Filament\Actions\RebuildAttendanceAction;
 use Webkul\Attendance\Filament\Exports\AbsenceDetailExporter;
 use Webkul\Attendance\Filament\Exports\AbsenceReportExporter;
 use Webkul\Attendance\Filament\Exports\Jobs\PrepareAbsenceDetailExport;
+use Webkul\Attendance\Filament\Resources\AttendanceEventResource\Tables\AttendanceEventsTable;
+use Webkul\Attendance\Filament\Resources\AttendanceResource;
+use Webkul\Attendance\Filament\Resources\AttendanceResource\Tables\AttendancesTable;
 use Webkul\Attendance\Filament\Tables\AttendanceRegisterTable;
+use Webkul\Attendance\Models\Attendance;
+use Webkul\Attendance\Models\AttendanceEvent;
+use Webkul\Attendance\Policies\AttendanceEventPolicy;
+use Webkul\Attendance\Policies\AttendancePolicy;
 use Webkul\Attendance\Services\AttendanceOverviewService;
+use Webkul\Attendance\Services\ShiftWindowResolver;
+use Webkul\Attendance\Settings\AttendanceSettings;
+use Webkul\Employee\Models\Department;
 use Webkul\Employee\Models\Employee;
 use Webkul\Support\Enums\NavigationGroup;
+use Webkul\Support\Filament\Infolists\Components\RepeatableEntry;
+use Webkul\Support\Models\Calendar;
 
 /**
  * Attendance register: one row per employee, one column
@@ -61,6 +79,12 @@ class AttendanceOverview extends Page implements HasForms, HasTable
 
     #[Locked]
     public ?int $employeeId = null;
+
+    #[Locked]
+    public ?int $departmentId = null;
+
+    #[Locked]
+    public ?int $calendarId = null;
 
     /**
      * Data range: drives exports, summaries and the detail query. Kept at
@@ -158,17 +182,19 @@ class AttendanceOverview extends Page implements HasForms, HasTable
     }
 
     /**
-     * @return array{employee_id: null, view_mode: string, month: int, year: int, date_from: string, date_to: string}
+     * @return array{employee_id: null, department_id: null, calendar_id: null, view_mode: string, month: int, year: int, date_from: string, date_to: string}
      */
     protected function defaultFilterValues(): array
     {
         return [
-            'employee_id' => null,
-            'view_mode'   => 'month',
-            'month'       => Carbon::today()->month,
-            'year'        => Carbon::today()->year,
-            'date_from'   => Carbon::today()->startOfMonth()->toDateString(),
-            'date_to'     => Carbon::today()->toDateString(),
+            'employee_id'   => null,
+            'department_id' => null,
+            'calendar_id'   => null,
+            'view_mode'     => 'month',
+            'month'         => Carbon::today()->month,
+            'year'          => Carbon::today()->year,
+            'date_from'     => Carbon::today()->startOfMonth()->toDateString(),
+            'date_to'       => Carbon::today()->toDateString(),
         ];
     }
 
@@ -215,19 +241,28 @@ class AttendanceOverview extends Page implements HasForms, HasTable
         $modeOptions = [
             'month' => __('attendance::filament/pages/overview.form.mode-month'),
             'range' => __('attendance::filament/pages/overview.form.mode-range'),
+            'year'  => __('attendance::filament/pages/overview.form.mode-year'),
         ];
-
-        if ($this->registerView === self::REGISTER_TOTALS) {
-            $modeOptions['year'] = __('attendance::filament/pages/overview.form.mode-year');
-        }
 
         return [
             Select::make('employee_id')
                 ->label(__('attendance::filament/pages/overview.form.employee'))
-                ->options(fn (): array => AttendanceOverviewService::scopeEligibleEmployees(Employee::query())->orderBy('name')->pluck('name', 'id')->all())
+                ->options(fn (): array => AttendanceOverviewService::searchEligibleEmployees())
                 ->searchable()
+                ->getSearchResultsUsing(fn (string $search): array => AttendanceOverviewService::searchEligibleEmployees($search))
+                ->getOptionLabelUsing(fn (mixed $value): ?string => AttendanceOverviewService::employeeOptionLabel($value))
                 ->placeholder(__('attendance::filament/pages/overview.form.all-employees'))
                 ->columnSpanFull(),
+            Select::make('department_id')
+                ->label(__('attendance::filament/pages/overview.form.department'))
+                ->options(fn (): array => AttendanceOverviewService::departmentOptions())
+                ->searchable()
+                ->placeholder(__('attendance::filament/pages/overview.form.all-departments')),
+            Select::make('calendar_id')
+                ->label(__('attendance::filament/pages/overview.form.calendar'))
+                ->options(fn (): array => Calendar::query()->orderBy('name')->pluck('name', 'id')->all())
+                ->searchable()
+                ->placeholder(__('attendance::filament/pages/overview.form.all-calendars')),
             Select::make('view_mode')
                 ->label(__('attendance::filament/pages/overview.form.view-mode'))
                 ->options($modeOptions)
@@ -343,6 +378,16 @@ class AttendanceOverview extends Page implements HasForms, HasTable
                 ->removeField('employee_id');
         }
 
+        if ($appliedDepartment = $this->appliedDepartmentName()) {
+            $indicators['department_id'] = Indicator::make(__('attendance::filament/pages/overview.filter-chips.department').': '.$appliedDepartment)
+                ->removeField('department_id');
+        }
+
+        if ($appliedCalendar = $this->appliedCalendarName()) {
+            $indicators['calendar_id'] = Indicator::make(__('attendance::filament/pages/overview.filter-chips.calendar').': '.$appliedCalendar)
+                ->removeField('calendar_id');
+        }
+
         return $indicators;
     }
 
@@ -385,6 +430,8 @@ class AttendanceOverview extends Page implements HasForms, HasTable
     protected function applyFilterState(array $data, bool $rebuildTable = true): void
     {
         $this->employeeId = ! empty($data['employee_id']) ? (int) $data['employee_id'] : null;
+        $this->departmentId = ! empty($data['department_id']) ? (int) $data['department_id'] : null;
+        $this->calendarId = ! empty($data['calendar_id']) ? (int) $data['calendar_id'] : null;
 
         $today = Carbon::today();
 
@@ -455,12 +502,24 @@ class AttendanceOverview extends Page implements HasForms, HasTable
             return;
         }
 
+        if ($field === 'department_id') {
+            $this->clearDepartment();
+
+            return;
+        }
+
+        if ($field === 'calendar_id') {
+            $this->clearCalendar();
+
+            return;
+        }
+
         $this->resetFilters();
     }
 
     public function removeTableFilters(): void
     {
-        $this->clearEmployee();
+        $this->resetFilters();
         $this->resetTableSearch();
         $this->resetTableColumnSearches();
     }
@@ -555,7 +614,25 @@ class AttendanceOverview extends Page implements HasForms, HasTable
             return null;
         }
 
-        return Employee::query()->whereKey($this->employeeId)->value('name');
+        return AttendanceOverviewService::employeeOptionLabel($this->employeeId);
+    }
+
+    public function appliedDepartmentName(): ?string
+    {
+        if (! $this->departmentId) {
+            return null;
+        }
+
+        return Department::query()->whereKey($this->departmentId)->value('name');
+    }
+
+    public function appliedCalendarName(): ?string
+    {
+        if (! $this->calendarId) {
+            return null;
+        }
+
+        return Calendar::query()->whereKey($this->calendarId)->value('name');
     }
 
     /**
@@ -564,14 +641,29 @@ class AttendanceOverview extends Page implements HasForms, HasTable
      */
     public function clearEmployee(): void
     {
-        $this->filterData['employee_id'] = null;
+        $this->clearFilterField('employee_id');
+    }
+
+    public function clearDepartment(): void
+    {
+        $this->clearFilterField('department_id');
+    }
+
+    public function clearCalendar(): void
+    {
+        $this->clearFilterField('calendar_id');
+    }
+
+    protected function clearFilterField(string $field): void
+    {
+        $this->filterData[$field] = null;
 
         if (isset($this->tableFilters['overview'])) {
-            $this->tableFilters['overview']['employee_id'] = null;
+            $this->tableFilters['overview'][$field] = null;
         }
 
         if (isset($this->tableDeferredFilters['overview'])) {
-            $this->tableDeferredFilters['overview']['employee_id'] = null;
+            $this->tableDeferredFilters['overview'][$field] = null;
         }
 
         $this->filterForm->fill($this->filterData);
@@ -777,9 +869,11 @@ class AttendanceOverview extends Page implements HasForms, HasTable
     {
         $rows = collect($this->getGrid());
 
-        $sum = fn (string $total): int => (int) $rows->sum(
-            fn (array $row): int => $row['totals'][$total],
-        );
+        $sum = function (string $total) use ($rows): int|float {
+            $value = $rows->sum(fn (array $row): float => (float) $row['totals'][$total]);
+
+            return abs($value - round($value)) < 0.0001 ? (int) round($value) : round($value, 1);
+        };
 
         $workdays = $sum('workdays');
         $absent = $sum('absent');
@@ -838,19 +932,47 @@ class AttendanceOverview extends Page implements HasForms, HasTable
     }
 
     /**
+     * Aggregate hours across the filtered employees for the KPI strip:
+     * worked versus scheduled minutes, overtime, breaks, late minutes and
+     * missing check-outs. Weighted totals are summed as floats so half
+     * days stay visible.
+     *
+     * @return array{scheduled: int, worked: int, overtime: int, break: int, late: int, missing_checkouts: int}
+     */
+    public function getHoursSummary(): array
+    {
+        $rows = collect($this->getGrid());
+
+        $sum = fn (string $field): int => (int) round($rows->sum(
+            fn (array $row): float => (float) ($row['totals'][$field] ?? 0),
+        ));
+
+        return [
+            'scheduled'         => $sum('scheduled_minutes'),
+            'worked'            => $sum('minutes'),
+            'overtime'          => $sum('overtime_minutes'),
+            'break'             => $sum('break_minutes'),
+            'late'              => $sum('late_minutes'),
+            'missing_checkouts' => $sum('missing_checkouts'),
+        ];
+    }
+
+    /**
      * Daily present/absent/leave buckets across the display range for the
      * trend chart. Pending leave lands in the absent bucket to mirror the
-     * D4 absence figure; holidays, weekly off days and future days carry
-     * no bars.
+     * D4 absence figure; weekend and holiday work count as present, a
+     * missing check-out as absent; holidays, weekly off days and future
+     * days carry no bars.
      *
      * @return list<array{date: string, label: string, present: int, absent: int, leave: int}>
      */
     public function getDailyTrend(): array
     {
         $grid = $this->getGrid();
+        $pendingCountsAsAbsent = AttendanceSettings::countPendingLeaveAsAbsent();
 
         return collect($this->getGridDays())
-            ->map(function (string $date) use ($grid): array {
+            ->map(function (string $date) use ($grid, $pendingCountsAsAbsent): array {
                 $present = 0;
                 $absent = 0;
                 $leave = 0;
@@ -858,9 +980,12 @@ class AttendanceOverview extends Page implements HasForms, HasTable
 
                 foreach ($grid as $row) {
                     match ($row['cells'][$date] ?? null) {
-                        AttendanceOverviewService::STATUS_PRESENT => $present++,
+                        AttendanceOverviewService::STATUS_PRESENT,
+                        AttendanceOverviewService::STATUS_WEEKEND_PRESENT,
+                        AttendanceOverviewService::STATUS_HOLIDAY_PRESENT => $present++,
                         AttendanceOverviewService::STATUS_ABSENT,
-                        AttendanceOverviewService::STATUS_PENDING => $absent++,
+                        AttendanceOverviewService::STATUS_MISSING_CHECKOUT => $absent++,
+                        AttendanceOverviewService::STATUS_PENDING          => $pendingCountsAsAbsent ? $absent++ : $leave++,
                         AttendanceOverviewService::STATUS_ON_LEAVE,
                         AttendanceOverviewService::STATUS_HALF_DAY => $leave++,
                         AttendanceOverviewService::STATUS_WEEKLY_OFF,
@@ -898,7 +1023,10 @@ class AttendanceOverview extends Page implements HasForms, HasTable
             AttendanceOverviewService::STATUS_ON_LEAVE,
             AttendanceOverviewService::STATUS_HALF_DAY,
             AttendanceOverviewService::STATUS_PENDING,
+            AttendanceOverviewService::STATUS_MISSING_CHECKOUT,
             AttendanceOverviewService::STATUS_HOLIDAY,
+            AttendanceOverviewService::STATUS_WEEKEND_PRESENT,
+            AttendanceOverviewService::STATUS_HOLIDAY_PRESENT,
             AttendanceOverviewService::STATUS_WEEKLY_OFF,
             AttendanceOverviewService::STATUS_FUTURE,
         ])
@@ -919,28 +1047,289 @@ class AttendanceOverview extends Page implements HasForms, HasTable
     protected function getHeaderActions(): array
     {
         return [
-            ExportAction::make()
-                ->label(__('attendance::filament/pages/overview.export'))
-                ->icon('heroicon-o-arrow-up-tray')
-                ->exporter(AbsenceReportExporter::class)
-                ->maxRows(10000)
-                ->visible(fn (): bool => $this->registerView === self::REGISTER_TOTALS)
-                ->modifyQueryUsing(fn (Builder $query, array $options): Builder => AbsenceReportExporter::scopeQuery($query, $options)),
-            ExportAction::make('exportDetail')
-                ->label(__('attendance::filament/pages/overview.export-detail'))
-                ->icon('heroicon-o-arrow-down-tray')
-                ->exporter(AbsenceDetailExporter::class)
-                ->job(PrepareAbsenceDetailExport::class)
-                ->columnMapping(false)
-                ->visible(fn (): bool => $this->registerView !== self::REGISTER_TOTALS)
-                ->modifyQueryUsing(fn (Builder $query, array $options): Builder => AbsenceReportExporter::scopeQuery($query, $options)),
+            AbsenceReportExporter::configureExportAction(
+                ExportAction::make()
+                    ->label(__('attendance::filament/pages/overview.export'))
+                    ->icon('heroicon-o-arrow-up-tray')
+                    ->exporter(AbsenceReportExporter::class)
+                    ->maxRows(10000)
+                    ->authorize(fn (): bool => static::canAccess())
+                    ->visible(fn (): bool => $this->registerView === self::REGISTER_TOTALS)
+                    ->modifyQueryUsing(fn (Builder $query, array $options): Builder => AbsenceReportExporter::scopeQuery($query, $options)),
+            ),
+            AbsenceDetailExporter::configureExportAction(
+                ExportAction::make('exportDetail')
+                    ->label(__('attendance::filament/pages/overview.export-detail'))
+                    ->icon('heroicon-o-arrow-down-tray')
+                    ->exporter(AbsenceDetailExporter::class)
+                    ->job(PrepareAbsenceDetailExport::class)
+                    ->columnMapping(false)
+                    ->authorize(fn (): bool => static::canAccess())
+                    ->visible(fn (): bool => $this->registerView !== self::REGISTER_TOTALS)
+                    ->modifyQueryUsing(fn (Builder $query, array $options): Builder => AbsenceReportExporter::scopeQuery($query, $options)),
+            ),
+            RebuildAttendanceAction::make(),
         ];
+    }
+
+    public function inspectDayCellAction(): Action
+    {
+        return Action::make('inspectDayCell')
+            ->label(__('attendance::filament/pages/overview.inspect.action_label'))
+            ->slideOver()
+            ->modalWidth(Width::FourExtraLarge)
+            ->modalHeading(function (array $arguments): string {
+                $employee = Employee::query()->find($arguments['employee_id'] ?? null);
+                $date = $arguments['date'] ?? null;
+                $formattedDate = $date ? Carbon::parse($date)->translatedFormat('l, j F Y') : '';
+
+                return $employee ? "{$employee->name} — {$formattedDate}" : __('attendance::filament/pages/overview.inspect.heading');
+            })
+            ->modalDescription(__('attendance::filament/pages/overview.inspect.description'))
+            ->modalSubmitAction(false)
+            ->modalCancelActionLabel(__('attendance::filament/pages/overview.inspect.close'))
+            ->authorize(function (array $arguments): bool {
+                $employeeId = (int) ($arguments['employee_id'] ?? 0);
+                if ($employeeId <= 0) {
+                    return false;
+                }
+
+                return AttendancePolicy::scopeEmployeeQuery(Employee::query())->whereKey($employeeId)->exists();
+            })
+            ->schema(fn (array $arguments): array => $this->buildInspectDaySchema($arguments))
+            ->extraModalFooterActions(fn (Action $action): array => $this->buildInspectDayFooterActions($action));
+    }
+
+    protected function buildInspectDaySchema(array $arguments): array
+    {
+        $employeeId = (int) ($arguments['employee_id'] ?? 0);
+        $date = (string) ($arguments['date'] ?? '');
+
+        if ($employeeId <= 0 || blank($date)) {
+            return [];
+        }
+
+        $employee = Employee::with('calendar')->find($employeeId);
+        if (! $employee) {
+            return [];
+        }
+
+        $service = app(AttendanceOverviewService::class);
+        $calendar = $service->calendarFor($employee);
+        $dayObj = Carbon::parse($date);
+        $registerRow = $service->register(collect([$employee]), $dayObj, $dayObj)->first();
+        $cellStatus = (string) ($registerRow['cells'][$date] ?? AttendanceOverviewService::STATUS_WEEKLY_OFF);
+        $meta = (array) ($registerRow['meta'][$date] ?? []);
+
+        $tz = $employee->time_zone ?: config('app.timezone', 'UTC');
+        $scheduledMinutes = isset($meta['scheduled_minutes'])
+            ? (int) $meta['scheduled_minutes']
+            : ($calendar ? app(ShiftWindowResolver::class)->scheduledMinutesForDay($calendar, $date, $tz) : 0);
+        $workedMinutes = (int) ($meta['minutes'] ?? 0);
+        $workedHours = AttendanceRegisterTable::formatMinutesToHours($workedMinutes);
+        $scheduledHours = AttendanceRegisterTable::formatMinutesToHours($scheduledMinutes);
+
+        $dayStartUtc = Carbon::parse($date.' 00:00:00', $tz)->utc()->format('Y-m-d H:i:s');
+        $dayEndUtc = Carbon::parse($date.' 23:59:59', $tz)->utc()->format('Y-m-d H:i:s');
+
+        $attendances = AttendancePolicy::scopeQuery(Attendance::query())
+            ->where('employee_id', $employeeId)
+            ->whereDate('work_date', $date)
+            ->orderBy('check_in')
+            ->get();
+
+        $attendanceIds = $attendances->modelKeys();
+
+        $events = AttendanceEventPolicy::scopeQuery(AttendanceEvent::query())
+            ->where('employee_id', $employeeId)
+            ->where(function (Builder $query) use ($dayStartUtc, $dayEndUtc, $attendanceIds): void {
+                $query->whereBetween('punched_at', [$dayStartUtc, $dayEndUtc]);
+
+                if ($attendanceIds !== []) {
+                    $query->orWhereIn('attendance_id', $attendanceIds);
+                }
+            })
+            ->orderBy('punched_at')
+            ->get();
+
+        $firstRec = $attendances->first();
+        $lastRec = $attendances->last();
+        $firstIn = $firstRec
+            ? (AttendancesTable::employeeWallClock($firstRec, 'check_in')?->format('H:i') ?? '—')
+            : '—';
+        $lastOut = $lastRec
+            ? ($lastRec->check_out !== null
+                ? (AttendancesTable::employeeWallClock($lastRec, 'check_out')?->format('H:i') ?? '—')
+                    .(AttendancesTable::crossesMidnight($lastRec) ? ' (+1d)' : '')
+                : __('attendance::filament/pages/overview.inspect.missing_checkout'))
+            : '—';
+
+        return [
+            Section::make(__('attendance::filament/pages/overview.inspect.evaluation_title'))
+                ->schema([
+                    Grid::make(4)
+                        ->schema([
+                            TextEntry::make('status')
+                                ->label(__('attendance::filament/pages/overview.inspect.status'))
+                                ->state(AttendanceRegisterTable::statusLabel($cellStatus))
+                                ->badge()
+                                ->color(AttendanceRegisterTable::statusColor($cellStatus)),
+                            TextEntry::make('shift')
+                                ->label(__('attendance::filament/pages/overview.inspect.shift'))
+                                ->state($calendar?->name ?? __('attendance::filament/pages/overview.inspect.no_shift')),
+                            TextEntry::make('worked_hours')
+                                ->label(__('attendance::filament/pages/overview.inspect.worked_hours'))
+                                ->state("{$workedHours} / {$scheduledHours}"),
+                            TextEntry::make('times')
+                                ->label(__('attendance::filament/pages/overview.inspect.first_in_last_out'))
+                                ->state("{$firstIn} → {$lastOut}"),
+                        ]),
+                    Grid::make(4)
+                        ->schema([
+                            TextEntry::make('late')
+                                ->label(__('attendance::filament/pages/overview.inspect.late_minutes'))
+                                ->state(((int) ($meta['late_minutes'] ?? 0)).' min'),
+                            TextEntry::make('early_leave')
+                                ->label(__('attendance::filament/pages/overview.inspect.early_leave_minutes'))
+                                ->state(((int) ($meta['early_leave_minutes'] ?? 0)).' min'),
+                            TextEntry::make('overtime')
+                                ->label(__('attendance::filament/pages/overview.inspect.overtime_minutes'))
+                                ->state(((int) ($meta['overtime_minutes'] ?? 0)).' min'),
+                            TextEntry::make('break')
+                                ->label(__('attendance::filament/pages/overview.inspect.break_minutes'))
+                                ->state(((int) ($meta['break_minutes'] ?? 0)).' min'),
+                        ]),
+                ]),
+
+            Section::make(__('attendance::filament/pages/overview.inspect.sessions_title'))
+                ->schema([
+                    TextEntry::make('sessions_empty')
+                        ->hiddenLabel()
+                        ->state(__('attendance::filament/pages/overview.inspect.no_sessions'))
+                        ->color('gray')
+                        ->visible($attendances->isEmpty()),
+
+                    RepeatableEntry::make('attendances')
+                        ->hiddenLabel()
+                        ->state($attendances)
+                        ->visible($attendances->isNotEmpty())
+                        ->schema([
+                            Grid::make(4)
+                                ->schema([
+                                    TextEntry::make('check_in')
+                                        ->label(__('attendance::filament/resources/attendance.form.check-in'))
+                                        ->state(fn (Attendance $rec): string => AttendancesTable::employeeWallClock($rec, 'check_in')?->format('Y-m-d H:i:s') ?? '—'),
+                                    TextEntry::make('check_out')
+                                        ->label(__('attendance::filament/resources/attendance.form.check-out'))
+                                        ->state(fn (Attendance $rec): string => $rec->check_out !== null
+                                            ? (AttendancesTable::employeeWallClock($rec, 'check_out')?->format('Y-m-d H:i:s') ?? '—')
+                                                .(AttendancesTable::crossesMidnight($rec) ? ' (+1d)' : '')
+                                            : __('attendance::filament/pages/overview.inspect.missing_checkout'))
+                                        ->color(fn (Attendance $rec): ?string => $rec->check_out !== null ? null : 'danger'),
+                                    TextEntry::make('worked_minutes')
+                                        ->label(__('attendance::filament/pages/overview.inspect.duration'))
+                                        ->state(fn (Attendance $rec): string => $rec->worked_minutes !== null ? AttendanceRegisterTable::formatMinutesToHours((int) $rec->worked_minutes) : '—'),
+                                    TextEntry::make('source')
+                                        ->label(__('attendance::filament/resources/attendance.form.source'))
+                                        ->state(fn (Attendance $rec): string => Attendance::sourceDisplayName((string) $rec->source, $rec->source_label))
+                                        ->badge(),
+                                ]),
+                        ]),
+                ]),
+
+            Section::make(__('attendance::filament/pages/overview.inspect.raw_punches_title'))
+                ->schema([
+                    TextEntry::make('punches_empty')
+                        ->hiddenLabel()
+                        ->state(__('attendance::filament/pages/overview.inspect.no_punches'))
+                        ->color('gray')
+                        ->visible($events->isEmpty()),
+
+                    RepeatableEntry::make('raw_events')
+                        ->hiddenLabel()
+                        ->state($events)
+                        ->visible($events->isNotEmpty())
+                        ->schema([
+                            Grid::make(4)
+                                ->schema([
+                                    TextEntry::make('punched_at')
+                                        ->label(__('attendance::filament/resources/attendance-event.table.columns.punch-time'))
+                                        ->state(fn (AttendanceEvent $ev): string => AttendanceEventsTable::eventWallClock($ev)?->format('H:i:s') ?? '—'),
+                                    TextEntry::make('direction')
+                                        ->label(__('attendance::filament/resources/attendance-event.table.columns.direction'))
+                                        ->state(fn (AttendanceEvent $ev): string => AttendanceEvent::directionLabel((int) $ev->direction)),
+                                    TextEntry::make('source')
+                                        ->label(__('attendance::filament/resources/attendance-event.table.columns.source'))
+                                        ->state(fn (AttendanceEvent $ev): string => Attendance::sourceDisplayName((string) $ev->source, $ev->source_label)),
+                                    TextEntry::make('status')
+                                        ->label(__('attendance::filament/pages/overview.inspect.status'))
+                                        ->badge()
+                                        ->state(fn (AttendanceEvent $ev): string => $ev->attendance_id !== null
+                                            ? __('attendance::filament/pages/overview.inspect.paired')
+                                            : __('attendance::filament/pages/overview.inspect.unpaired'))
+                                        ->color(fn (AttendanceEvent $ev): string => $ev->attendance_id !== null ? 'success' : 'warning'),
+                                ]),
+                        ]),
+                ]),
+        ];
+    }
+
+    protected function buildInspectDayFooterActions(Action $action): array
+    {
+        $arguments = $action->getArguments();
+        $employeeId = (int) ($arguments['employee_id'] ?? 0);
+        $date = (string) ($arguments['date'] ?? '');
+
+        if ($employeeId <= 0 || blank($date) || AttendanceSettings::isLockedDate($date)) {
+            return [];
+        }
+
+        $employee = Employee::query()->find($employeeId);
+        if (! $employee) {
+            return [];
+        }
+
+        $user = auth()->user();
+        $openAttendance = Attendance::query()
+            ->where('employee_id', $employeeId)
+            ->where('work_date', $date)
+            ->whereNull('check_out')
+            ->first();
+
+        $actions = [];
+
+        if ($openAttendance && $user?->can('update', $openAttendance)) {
+            $actions[] = Action::make('completeDayCheckout')
+                ->label(__('attendance::filament/pages/overview.inspect.actions.complete_checkout'))
+                ->icon('heroicon-o-pencil-square')
+                ->color('success')
+                ->url(AttendanceResource::getUrl('edit', ['record' => $openAttendance]))
+                ->openUrlInNewTab(false);
+        }
+
+        if ($user?->can('create', Attendance::class)) {
+            $actions[] = Action::make('addManualAttendanceDay')
+                ->label(__('attendance::filament/pages/overview.inspect.actions.add_manual'))
+                ->icon('heroicon-o-plus-circle')
+                ->color('primary')
+                ->url(AttendanceResource::getUrl('create', [
+                    'employee_id' => $employee->id,
+                    'work_date'   => $date,
+                ]))
+                ->openUrlInNewTab(false);
+        }
+
+        return $actions;
     }
 
     protected function filteredEmployees(): Collection
     {
-        return AttendanceOverviewService::scopeEligibleEmployees(Employee::query())
+        return AttendancePolicy::scopeEmployeeQuery(
+            AttendanceOverviewService::scopeEligibleEmployees(Employee::query()),
+        )
             ->when($this->employeeId, fn (Builder $query) => $query->whereKey($this->employeeId))
+            ->when($this->departmentId, fn (Builder $query) => AttendanceOverviewService::scopeByDepartment($query, $this->departmentId))
+            ->when($this->calendarId, fn (Builder $query) => AttendanceOverviewService::scopeByCalendar($query, $this->calendarId))
             ->orderBy('name')
             ->get();
     }

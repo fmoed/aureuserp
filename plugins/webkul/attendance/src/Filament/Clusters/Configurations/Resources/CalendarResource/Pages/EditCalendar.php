@@ -2,44 +2,19 @@
 
 namespace Webkul\Attendance\Filament\Clusters\Configurations\Resources\CalendarResource\Pages;
 
-use Filament\Actions\DeleteAction;
-use Filament\Actions\ViewAction;
-use Filament\Notifications\Notification;
-use Filament\Resources\Pages\EditRecord;
 use Webkul\Attendance\Filament\Clusters\Configurations\Resources\CalendarResource;
+use Webkul\Attendance\Filament\Clusters\Configurations\Resources\CalendarResource\Actions\AssignEmployeesToShiftAction;
+use Webkul\Support\Filament\Resources\CalendarResource\Pages\EditCalendar as BaseEditCalendar;
 
-class EditCalendar extends EditRecord
+class EditCalendar extends BaseEditCalendar
 {
     protected static string $resource = CalendarResource::class;
-
-    public function getSubNavigation(): array
-    {
-        if (filled($cluster = static::getCluster())) {
-            return $this->generateNavigationItems($cluster::getClusteredComponents());
-        }
-
-        return [];
-    }
-
-    protected function getSavedNotification(): Notification
-    {
-        return Notification::make()
-            ->success()
-            ->title(__('support::filament/resources/calendar/pages/edit-calendar.notification.title'))
-            ->body(__('support::filament/resources/calendar/pages/edit-calendar.notification.body'));
-    }
 
     protected function getHeaderActions(): array
     {
         return [
-            ViewAction::make(),
-            DeleteAction::make()
-                ->successNotification(
-                    Notification::make()
-                        ->success()
-                        ->title(__('support::filament/resources/calendar/pages/edit-calendar.header-actions.delete.notification.title'))
-                        ->body(__('support::filament/resources/calendar/pages/edit-calendar.header-actions.delete.notification.body')),
-                ),
+            AssignEmployeesToShiftAction::make($this->getRecord()),
+            ...parent::getHeaderActions(),
         ];
     }
 }

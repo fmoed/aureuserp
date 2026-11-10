@@ -25,16 +25,74 @@ return [
                     'timezone'              => 'Timezone',
                     'timezone-tooltip'      => 'Please select the timezone for the working schedule.',
                     'company'               => 'Company',
+                    'shift-type'            => 'Shift Type',
+                ],
+            ],
+
+            'windows' => [
+                'title'          => 'Check-in / Check-out Windows & Pairing',
+                'description'    => 'Acceptance windows that decide when the device opens check-in and closes check-out for this shift, including night shifts across midnight.',
+                'minutes-suffix' => 'minutes',
+                'overlap-error'  => 'The shift length plus both acceptance windows must stay under 24 hours.',
+                'preview-in'     => 'Shift starts :start — Check-in accepted from :open',
+                'preview-out'    => 'Shift ends :end — Check-out accepted until :close',
+                'preview-split'  => 'Part :index (:start–:end): accepted :open to :close',
+                'fields'         => [
+                    'pairing-mode'    => 'Punch Pairing Mode',
+                    'check-in-before' => 'Check-in Window Before Shift',
+                    'check-out-after' => 'Check-out Window After Shift',
+                ],
+            ],
+
+            'punctuality' => [
+                'title'       => 'Punctuality & Early Arrival',
+                'description' => 'Grace periods and how early arrivals interact with early departures.',
+                'fields'      => [
+                    'late-grace'           => 'Late Grace',
+                    'early-leave-grace'    => 'Early Leave Grace',
+                    'early-arrival-policy' => 'Early Arrival Policy',
+                    'max-early-offset'     => 'Max Early Offset',
+                ],
+            ],
+
+            'breaks' => [
+                'title'       => 'Breaks',
+                'description' => 'How break time is tracked or deducted during the shift.',
+            ],
+
+            'policies' => [
+                'title'       => 'Shift Operational Policies (Windows, Grace & Overtime)',
+                'description' => 'Configure check-in/check-out acceptance windows, late and early-leave grace periods, missing checkout policy, and overtime rules for this shift.',
+                'fields'      => [
+                    'break-policy'             => 'Break Policy',
+                    'break-duration'           => 'Break Duration',
+                    'break-trigger'            => 'Break Trigger',
+                    'holiday-policy'           => 'Holiday Policy',
+                    'missing-checkout-policy'  => 'Missing Checkout Policy',
+                    'missing-checkout-inherit' => 'Inherit from attendance settings',
+                    'half-day-threshold'       => 'Half-day Threshold',
+                    'absent-threshold'         => 'Absence Threshold',
+                    'overtime-enabled'         => 'Enable Overtime',
+                    'min-overtime'             => 'Minimum Overtime',
                 ],
             ],
 
             'configuration' => [
-                'title'  => 'Work Hours Configuration',
-                'fields' => [
+                'title'                   => 'Work Hours & Shift Periods',
+                'split-min-periods-error' => 'A split shift requires at least two working periods (Part 1 and Part 2).',
+                'hours-mismatch-error'    => 'The sum of the configured shift periods (:actual hours) does not match Hours Per Day (:expected hours).',
+                'custom-schedule-hint'    => 'Note: this shift has customized hours for some days in the schedule below. Your per-day overrides will only be replaced if you change working days or periods here.',
+                'fields'                  => [
                     'hours-per-day'                   => 'Hours Per Day',
                     'hours-per-day-suffix'            => 'Hours',
                     'full-time-required-hours'        => 'Full Time Required Hours',
                     'full-time-required-hours-suffix' => 'Hours Per Week',
+                    'work-days'                       => 'Working Days',
+                    'shift-periods'                   => 'Daily Shift Periods (Start & End Times)',
+                    'period-from'                     => 'Start Time',
+                    'period-to'                       => 'End Time',
+                    'day-period'                      => 'Day Period',
+                    'add-period'                      => 'Add another shift period',
                 ],
             ],
 

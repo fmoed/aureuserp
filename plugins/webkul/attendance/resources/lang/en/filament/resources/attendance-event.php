@@ -25,6 +25,8 @@ return [
 
         'filters' => [
             'linkage'           => 'Linkage',
+            'department'        => 'Department',
+            'calendar'          => 'Work schedule',
             'linkage-paired'    => 'Paired',
             'linkage-unpaired'  => 'Unpaired',
             'employee'          => 'Employee',
@@ -36,7 +38,8 @@ return [
         ],
 
         'toolbar-actions' => [
-            'export' => 'Export',
+            'export'          => 'Export',
+            'export-selected' => 'Export selected',
         ],
     ],
 ];

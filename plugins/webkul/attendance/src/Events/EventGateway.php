@@ -7,6 +7,7 @@ use Webkul\Attendance\Models\Attendance;
 use Webkul\Attendance\Models\AttendanceEvent;
 use Webkul\Attendance\Writers\WriterRegistry;
 use Webkul\Employee\Models\Employee;
+use Webkul\Support\Models\Scopes\CompanyScope;
 
 class EventGateway
 {
@@ -22,7 +23,7 @@ class EventGateway
             throw new InvalidArgumentException("Unknown attendance source [{$source}].");
         }
 
-        $employee = Employee::query()->findOrFail($employeeId);
+        $employee = Employee::withoutGlobalScope(CompanyScope::class)->findOrFail($employeeId);
 
         return AttendanceEvent::firstOrCreate(
             [

@@ -6,7 +6,9 @@ use BezhanSalleh\FilamentShield\Traits\HasWidgetShield;
 use Filament\Widgets\StatsOverviewWidget as BaseWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
 use Illuminate\Support\Carbon;
+use Webkul\Attendance\Filament\Resources\AttendanceResource;
 use Webkul\Attendance\Models\Attendance;
+use Webkul\Attendance\Policies\AttendancePolicy;
 
 /**
  * Dashboard answer to "how is attendance doing today": distinct
@@ -37,14 +39,12 @@ class TodayAttendanceWidget extends BaseWidget
     {
         $day ??= Carbon::today();
 
-        $rows = Attendance::query()
-            ->whereDate('work_date', $day->toDateString())
-            ->get(['employee_id', 'check_out']);
+        $query = AttendancePolicy::scopeQuery(Attendance::query())->whereDate('work_date', $day->toDateString());
 
         return [
-            'rows'    => $rows->count(),
-            'present' => $rows->pluck('employee_id')->unique()->count(),
-            'open'    => $rows->whereNull('check_out')->count(),
+            'rows'    => (clone $query)->count(),
+            'present' => (clone $query)->distinct()->count('employee_id'),
+            'open'    => (clone $query)->whereNull('check_out')->count(),
         ];
     }
 
@@ -67,16 +67,30 @@ class TodayAttendanceWidget extends BaseWidget
     {
         $stats = static::todayStats();
 
+        $todayUrl = AttendanceResource::canViewAny()
+            ? AttendanceResource::getUrl('index', ['tableFilters' => ['work_date' => ['preset' => 'today']]])
+            : null;
+
+        $openUrl = AttendanceResource::canViewAny()
+            ? AttendanceResource::getUrl('index', ['tableFilters' => [
+                'work_date'      => ['preset' => 'today'],
+                'session_status' => ['value' => 'open'],
+            ]])
+            : null;
+
         return [
             Stat::make(__('attendance::filament/widgets/today-attendance.stats.present'), $stats['present'])
                 ->description(__('attendance::filament/widgets/today-attendance.stats.present-description'))
-                ->color('success'),
+                ->color('success')
+                ->url($todayUrl),
             Stat::make(__('attendance::filament/widgets/today-attendance.stats.open'), $stats['open'])
                 ->description(__('attendance::filament/widgets/today-attendance.stats.open-description'))
-                ->color('warning'),
+                ->color('warning')
+                ->url($openUrl),
             Stat::make(__('attendance::filament/widgets/today-attendance.stats.rows'), $stats['rows'])
                 ->description(__('attendance::filament/widgets/today-attendance.stats.rows-description'))
-                ->color('info'),
+                ->color('info')
+                ->url($todayUrl),
         ];
     }
 }

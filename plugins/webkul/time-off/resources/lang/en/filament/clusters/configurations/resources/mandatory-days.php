@@ -11,10 +11,12 @@ return [
 
     'form' => [
         'fields' => [
-            'name'       => 'Name',
-            'start-date' => 'Start Date',
-            'end-date'   => 'End Date',
-            'color'      => 'Color',
+            'name'                 => 'Name',
+            'start-date'           => 'Start Date',
+            'end-date'             => 'End Date',
+            'color'                => 'Color',
+            'calendar'             => 'Shift',
+            'calendar-placeholder' => 'All shifts (company-wide)',
         ],
     ],
 

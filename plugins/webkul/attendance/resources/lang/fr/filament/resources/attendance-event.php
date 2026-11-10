@@ -24,6 +24,8 @@ return [
         ],
 
         'filters' => [
+            'department'        => 'Département',
+            'calendar'          => 'Horaire de travail',
             'linkage'           => 'Liaison',
             'linkage-paired'    => 'Lié',
             'linkage-unpaired'  => 'Non lié',
@@ -36,7 +38,8 @@ return [
         ],
 
         'toolbar-actions' => [
-            'export' => 'Exporter',
+            'export'          => 'Exporter',
+            'export-selected' => 'Exporter la sélection',
         ],
     ],
 ];

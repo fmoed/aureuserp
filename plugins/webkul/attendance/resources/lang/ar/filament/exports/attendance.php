@@ -7,6 +7,8 @@ return [
         'check-in'  => 'الحضور',
         'check-out' => 'الانصراف',
         'worked'    => 'المدة',
+        'break'     => 'استراحة',
+        'estimated' => 'مقدّر',
         'source'    => 'المصدر',
     ],
 

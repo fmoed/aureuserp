@@ -1,5 +1,7 @@
 <?php
 
+use Webkul\Attendance\Filament\Clusters\Configurations;
+use Webkul\Attendance\Filament\Pages\ManageAttendance;
 use Webkul\Attendance\Filament\Resources\AttendanceEventResource;
 use Webkul\Attendance\Filament\Resources\AttendanceResource;
 
@@ -13,5 +15,12 @@ return [
             AttendanceEventResource::class => ['view_any', 'view'],
         ],
         'exclude' => [],
+    ],
+
+    'pages' => [
+        'exclude' => [
+            Configurations::class,
+            ManageAttendance::class,
+        ],
     ],
 ];

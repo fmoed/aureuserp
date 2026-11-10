@@ -25,6 +25,47 @@ return [
                     'timezone'              => 'Fuso horário',
                     'timezone-tooltip'      => 'Selecione o fuso horário para o horário de trabalho.',
                     'company'               => 'Empresa',
+                    'shift-type'            => 'Tipo de turno',
+                ],
+            ],
+
+            'windows' => [
+                'title'          => 'Janelas de entrada/saída e pareamento',
+                'description'    => 'Janelas de aceitação que definem quais batidas pertencem a este turno, incluindo turnos noturnos que atravessam a meia-noite.',
+                'minutes-suffix' => 'minutos',
+                'overlap-error'  => 'A duração do turno mais as duas janelas de aceitação devem ficar abaixo de 24 horas.',
+                'fields'         => [
+                    'pairing-mode'    => 'Modo de pareamento de batidas',
+                    'check-in-before' => 'Janela de entrada antes do turno',
+                    'check-out-after' => 'Janela de saída após o turno',
+                ],
+            ],
+
+            'punctuality' => [
+                'title'       => 'Pontualidade e chegada antecipada',
+                'description' => 'Períodos de tolerância e como a chegada antecipada interage com a saída antecipada.',
+                'fields'      => [
+                    'late-grace'           => 'Tolerância de atraso',
+                    'early-leave-grace'    => 'Tolerância de saída antecipada',
+                    'early-arrival-policy' => 'Política de chegada antecipada',
+                    'max-early-offset'     => 'Compensação máxima de chegada antecipada',
+                ],
+            ],
+
+            'policies' => [
+                'title'       => 'Intervalos, feriados, saídas ausentes e horas extras',
+                'description' => 'Dedução de intervalos, feriados oficiais, batidas incompletas, limite de meio dia e regras de horas extras.',
+                'fields'      => [
+                    'break-policy'             => 'Política de intervalo',
+                    'break-duration'           => 'Duração do intervalo',
+                    'break-trigger'            => 'Gatilho do intervalo',
+                    'holiday-policy'           => 'Política de feriados',
+                    'missing-checkout-policy'  => 'Política de saída ausente',
+                    'missing-checkout-inherit' => 'Herdar das configurações de presença',
+                    'half-day-threshold'       => 'Limite de meio dia',
+                    'absent-threshold'         => 'Limite de ausência',
+                    'overtime-enabled'         => 'Ativar horas extras',
+                    'min-overtime'             => 'Horas extras mínimas',
                 ],
             ],
 

@@ -15,12 +15,7 @@ class SyncPunchesCommand extends Command
 
     public function handle(DeviceSyncService $service): int
     {
-        $identifier = $this->argument('device');
-
-        $device = Device::query()
-            ->when(is_numeric($identifier), fn ($query) => $query->where('id', $identifier))
-            ->when(! is_numeric($identifier), fn ($query) => $query->where('name', $identifier))
-            ->first();
+        $device = Device::findByIdentifier((string) $this->argument('device'));
 
         if (! $device) {
             $this->error('Device ['.$this->argument('device').'] not found.');

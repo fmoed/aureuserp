@@ -2,36 +2,19 @@
 
 namespace Webkul\Attendance\Filament\Clusters\Configurations\Resources\CalendarResource\Pages;
 
-use Filament\Actions\DeleteAction;
-use Filament\Actions\EditAction;
-use Filament\Notifications\Notification;
-use Filament\Resources\Pages\ViewRecord;
 use Webkul\Attendance\Filament\Clusters\Configurations\Resources\CalendarResource;
+use Webkul\Attendance\Filament\Clusters\Configurations\Resources\CalendarResource\Actions\AssignEmployeesToShiftAction;
+use Webkul\Support\Filament\Resources\CalendarResource\Pages\ViewCalendar as BaseViewCalendar;
 
-class ViewCalendar extends ViewRecord
+class ViewCalendar extends BaseViewCalendar
 {
     protected static string $resource = CalendarResource::class;
-
-    public function getSubNavigation(): array
-    {
-        if (filled($cluster = static::getCluster())) {
-            return $this->generateNavigationItems($cluster::getClusteredComponents());
-        }
-
-        return [];
-    }
 
     protected function getHeaderActions(): array
     {
         return [
-            EditAction::make(),
-            DeleteAction::make()
-                ->successNotification(
-                    Notification::make()
-                        ->success()
-                        ->title(__('support::filament/resources/calendar/pages/view-calendar.header-actions.delete.notification.title'))
-                        ->body(__('support::filament/resources/calendar/pages/view-calendar.header-actions.delete.notification.body')),
-                ),
+            AssignEmployeesToShiftAction::make($this->getRecord()),
+            ...parent::getHeaderActions(),
         ];
     }
 }

@@ -5,10 +5,12 @@ namespace Webkul\Attendance\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use InvalidArgumentException;
 use Webkul\Attendance\Database\Factories\AttendanceFactory;
+use Webkul\Attendance\Settings\AttendanceSettings;
 use Webkul\Attendance\Writers\WriterRegistry;
 use Webkul\Chatter\Traits\HasChatter;
 use Webkul\Chatter\Traits\HasLogActivity;
@@ -42,7 +44,7 @@ class Attendance extends Model
             return false;
         }
 
-        return (int) floor($checkIn->diffInMinutes($checkOut)) <= self::MAX_SHIFT_HOURS * 60;
+        return (int) floor($checkIn->diffInMinutes($checkOut)) <= AttendanceSettings::maxShiftHours() * 60;
     }
 
     /**
@@ -132,6 +134,8 @@ class Attendance extends Model
         'work_date',
         'check_in',
         'check_out',
+        'break_minutes',
+        'is_estimated',
         'source',
         'source_label',
         'company_id',
@@ -139,9 +143,11 @@ class Attendance extends Model
     ];
 
     protected $casts = [
-        'work_date'  => 'date',
-        'check_in'   => 'datetime',
-        'check_out'  => 'datetime',
+        'work_date'     => 'date',
+        'check_in'      => 'datetime',
+        'check_out'     => 'datetime',
+        'break_minutes' => 'integer',
+        'is_estimated'  => 'boolean',
     ];
 
     public function employee(): BelongsTo
@@ -159,6 +165,11 @@ class Attendance extends Model
         return $this->belongsTo(User::class, 'creator_id');
     }
 
+    public function events(): HasMany
+    {
+        return $this->hasMany(AttendanceEvent::class, 'attendance_id');
+    }
+
     public function getModelTitle(): string
     {
         return __('attendance::filament/resources/attendance.title');
@@ -170,7 +181,9 @@ class Attendance extends Model
             return null;
         }
 
-        return (int) floor($this->check_in->diffInMinutes($this->check_out));
+        $gross = (int) floor($this->check_in->diffInMinutes($this->check_out));
+
+        return max(0, $gross - max(0, (int) ($this->break_minutes ?? 0)));
     }
 
     protected static function booted(): void

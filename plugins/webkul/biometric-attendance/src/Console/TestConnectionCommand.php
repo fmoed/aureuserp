@@ -16,7 +16,7 @@ class TestConnectionCommand extends Command
 
     public function handle(ZktecoClientInterface $client): int
     {
-        $device = $this->findDevice($this->argument('device'));
+        $device = Device::findByIdentifier((string) $this->argument('device'));
 
         if (! $device) {
             $this->error('Device ['.$this->argument('device').'] not found.');
@@ -50,13 +50,5 @@ class TestConnectionCommand extends Command
         );
 
         return self::SUCCESS;
-    }
-
-    protected function findDevice(string $identifier): ?Device
-    {
-        return Device::query()
-            ->when(is_numeric($identifier), fn ($query) => $query->where('id', $identifier))
-            ->when(! is_numeric($identifier), fn ($query) => $query->where('name', $identifier))
-            ->first();
     }
 }

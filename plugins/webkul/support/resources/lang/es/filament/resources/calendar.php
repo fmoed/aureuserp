@@ -25,6 +25,47 @@ return [
                     'timezone'              => 'Zona horaria',
                     'timezone-tooltip'      => 'Seleccione la zona horaria del horario laboral.',
                     'company'               => 'Empresa',
+                    'shift-type'            => 'Tipo de turno',
+                ],
+            ],
+
+            'windows' => [
+                'title'          => 'Ventanas de entrada/salida y emparejamiento',
+                'description'    => 'Ventanas de aceptación que deciden qué fichajes pertenecen a este turno, incluidos los turnos nocturnos que cruzan la medianoche.',
+                'minutes-suffix' => 'minutos',
+                'overlap-error'  => 'La duración del turno más ambas ventanas de aceptación debe mantenerse por debajo de 24 horas.',
+                'fields'         => [
+                    'pairing-mode'    => 'Modo de emparejamiento de fichajes',
+                    'check-in-before' => 'Ventana de entrada antes del turno',
+                    'check-out-after' => 'Ventana de salida después del turno',
+                ],
+            ],
+
+            'punctuality' => [
+                'title'       => 'Puntualidad y llegada anticipada',
+                'description' => 'Períodos de gracia y cómo interactúa la llegada anticipada con la salida anticipada.',
+                'fields'      => [
+                    'late-grace'           => 'Margen de retraso',
+                    'early-leave-grace'    => 'Margen de salida anticipada',
+                    'early-arrival-policy' => 'Política de llegada anticipada',
+                    'max-early-offset'     => 'Compensación máxima de llegada anticipada',
+                ],
+            ],
+
+            'policies' => [
+                'title'       => 'Descansos, festivos, salidas faltantes y horas extra',
+                'description' => 'Deducción de descansos, festivos oficiales, fichajes incompletos, umbral de medio día y reglas de horas extra.',
+                'fields'      => [
+                    'break-policy'             => 'Política de descanso',
+                    'break-duration'           => 'Duración del descanso',
+                    'break-trigger'            => 'Activación del descanso',
+                    'holiday-policy'           => 'Política de festivos',
+                    'missing-checkout-policy'  => 'Política de salida faltante',
+                    'missing-checkout-inherit' => 'Heredar de la configuración de asistencia',
+                    'half-day-threshold'       => 'Umbral de medio día',
+                    'absent-threshold'         => 'Umbral de ausencia',
+                    'overtime-enabled'         => 'Habilitar horas extra',
+                    'min-overtime'             => 'Horas extra mínimas',
                 ],
             ],
 

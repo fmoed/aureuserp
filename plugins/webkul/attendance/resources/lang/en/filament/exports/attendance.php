@@ -7,6 +7,8 @@ return [
         'check-in'  => 'Check In',
         'check-out' => 'Check Out',
         'worked'    => 'Worked',
+        'break'     => 'Break',
+        'estimated' => 'Estimated',
         'source'    => 'Source',
     ],
 

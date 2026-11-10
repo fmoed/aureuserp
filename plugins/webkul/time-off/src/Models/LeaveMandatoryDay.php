@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Facades\Auth;
 use Webkul\Security\Models\User;
+use Webkul\Support\Models\Calendar;
 use Webkul\Support\Models\Company;
 use Webkul\Support\Traits\BelongsToCompany;
 
@@ -19,6 +20,7 @@ class LeaveMandatoryDay extends Model
 
     protected $fillable = [
         'company_id',
+        'calendar_id',
         'creator_id',
         'color',
         'name',
@@ -39,6 +41,11 @@ class LeaveMandatoryDay extends Model
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'creator_id');
+    }
+
+    public function calendar(): BelongsTo
+    {
+        return $this->belongsTo(Calendar::class, 'calendar_id');
     }
 
     protected static function boot()

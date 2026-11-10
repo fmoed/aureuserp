@@ -2,11 +2,21 @@
 
 return [
     'columns' => [
-        'employee' => 'Employé',
-        'date'     => 'Date',
-        'day'      => 'Jour',
-        'status'   => 'Statut',
-        'minutes'  => 'Minutes',
+        'employee'              => 'Employé',
+        'schedule'              => 'Horaire',
+        'workdays'              => 'Jours travaillés',
+        'present'               => 'Présent',
+        'absent'                => 'Absent',
+        'on-leave'              => 'Congés',
+        'hours'                 => 'Heures travaillées',
+        'scheduled-minutes'     => 'Heures planifiées',
+        'worked-minutes'        => 'Heures travaillées',
+        'overtime-minutes'      => 'Heures supplémentaires',
+        'break-minutes'         => 'Heures de pause',
+        'late-minutes'          => 'Minutes de retard',
+        'early-leave-minutes'   => 'Minutes de départ anticipé',
+        'variance-minutes'      => "Écart d'heures",
+        'absence-rate'          => 'Taux d’absence',
     ],
 
     'notification' => [

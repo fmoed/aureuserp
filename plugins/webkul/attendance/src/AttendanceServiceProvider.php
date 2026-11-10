@@ -28,6 +28,7 @@ class AttendanceServiceProvider extends PackageServiceProvider
                 '2026_09_30_000001_add_source_label_to_attendance_attendances_table',
                 '2026_10_01_000001_create_attendance_events_table',
                 '2026_10_05_000001_allow_multiple_sessions_per_day_on_attendance_attendances_table',
+                '2026_11_07_000001_add_shift_policies_to_calendars_and_attendances_tables',
             ])
             ->hasCommands([
                 ProcessEventsCommand::class,
@@ -38,6 +39,8 @@ class AttendanceServiceProvider extends PackageServiceProvider
             ->runsMigrations()
             ->hasSettings([
                 '2026_10_19_000001_create_attendance_settings',
+                '2026_11_04_000001_add_governance_to_attendance_settings',
+                '2026_11_07_000002_add_enterprise_policies_to_attendance_settings',
             ])
             ->runsSettings()
             ->hasInstallCommand(function (InstallCommand $command) {

@@ -14,8 +14,9 @@ return [
 
     'form' => [
         'cadence' => [
-            'label' => 'Sync interval',
-            'hint'  => 'How often devices are read. Applies to the next scheduled run.',
+            'label'        => 'Sync interval',
+            'hint'         => 'How often devices are read. Applies to the next scheduled run.',
+            'devices-link' => 'Open biometric devices',
         ],
 
         'cadence-options' => [

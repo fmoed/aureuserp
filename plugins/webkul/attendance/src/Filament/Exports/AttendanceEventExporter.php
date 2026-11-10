@@ -10,6 +10,8 @@ use Webkul\Attendance\Filament\Exports\Concerns\HasAbsenceExportOptions;
 use Webkul\Attendance\Filament\Resources\AttendanceEventResource\Tables\AttendanceEventsTable;
 use Webkul\Attendance\Models\Attendance;
 use Webkul\Attendance\Models\AttendanceEvent;
+use Webkul\Attendance\Policies\AttendanceEventPolicy;
+use Webkul\Attendance\Services\AttendanceOverviewService;
 
 class AttendanceEventExporter extends Exporter
 {
@@ -24,10 +26,10 @@ class AttendanceEventExporter extends Exporter
 
     public static function scopeQuery(Builder $query, array $options): Builder
     {
-        return $query
+        return AttendanceEventPolicy::scopeQuery($query)
             ->when(
                 $options['employee_id'] ?? null,
-                fn (Builder $query, mixed $employeeId) => $query->where('employee_id', $employeeId)
+                fn (Builder $query, mixed $employeeId) => $query->whereIn('employee_id', (array) $employeeId)
             )
             ->when(
                 $options['date_from'] ?? null,
@@ -36,6 +38,14 @@ class AttendanceEventExporter extends Exporter
             ->when(
                 $options['date_to'] ?? null,
                 fn (Builder $query, mixed $dateTo) => $query->whereDate('punched_at', '<=', $dateTo)
+            )
+            ->when(
+                $options['department_id'] ?? null,
+                fn (Builder $query, mixed $departmentId) => $query->whereHas('employee', fn (Builder $employee) => AttendanceOverviewService::scopeByDepartment($employee, (array) $departmentId))
+            )
+            ->when(
+                $options['calendar_id'] ?? null,
+                fn (Builder $query, mixed $calendarId) => $query->whereHas('employee', fn (Builder $employee) => AttendanceOverviewService::scopeByCalendar($employee, (array) $calendarId))
             );
     }
 

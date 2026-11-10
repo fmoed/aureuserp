@@ -11,10 +11,12 @@ return [
 
     'form' => [
         'fields' => [
-            'name'       => 'Nom',
-            'start-date' => 'Date de début',
-            'end-date'   => 'Date de fin',
-            'color'      => 'Couleur',
+            'name'                 => 'Nom',
+            'start-date'           => 'Date de début',
+            'end-date'             => 'Date de fin',
+            'color'                => 'Couleur',
+            'calendar'             => 'Poste',
+            'calendar-placeholder' => 'Tous les postes (société)',
         ],
     ],
 
