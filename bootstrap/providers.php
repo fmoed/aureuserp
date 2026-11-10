@@ -7,6 +7,7 @@ use App\Providers\Filament\PosPanelProvider;
 use Webkul\Account\AccountServiceProvider;
 use Webkul\Accounting\AccountingServiceProvider;
 use Webkul\Analytic\AnalyticServiceProvider;
+use Webkul\Asset\AssetServiceProvider;
 use Webkul\Attendance\AttendanceServiceProvider;
 use Webkul\Barcode\BarcodeServiceProvider;
 use Webkul\BiometricAttendance\BiometricAttendanceServiceProvider;
@@ -50,6 +51,7 @@ return [
     BiometricAttendanceServiceProvider::class,
     BlogServiceProvider::class,
     ChatterServiceProvider::class,
+    AssetServiceProvider::class,
     ContactServiceProvider::class,
     CRMServiceProvider::class,
     EmployeeServiceProvider::class,

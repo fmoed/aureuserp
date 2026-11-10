@@ -22,6 +22,7 @@ return [
         'help'          => 'Aide',
         'attendance'    => 'Présences',
         'point-of-sale' => 'Point de vente',
+        'assets'        => 'Actifs',
         'barcode'       => 'Code-barres',
     ],
 

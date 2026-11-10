@@ -22,6 +22,7 @@ return [
         'help'          => 'Help',
         'attendance'    => 'Attendance',
         'point-of-sale' => 'Point of Sale',
+        'assets'        => 'Assets',
         'barcode'       => 'Barcode',
     ],
 

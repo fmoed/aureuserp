@@ -22,6 +22,7 @@ return [
         'help'          => 'المساعدة',
         'attendance'    => 'الحضور',
         'point-of-sale' => 'نقطة البيع',
+        'assets'        => 'الأصول والعُهد',
         'barcode'       => 'الباركود',
     ],
 

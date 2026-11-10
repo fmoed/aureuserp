@@ -22,6 +22,7 @@ return [
         'help'          => 'Ayuda',
         'attendance'    => 'Asistencias',
         'point-of-sale' => 'Punto de venta',
+        'assets'        => 'Activos',
         'barcode'       => 'Código de barras',
     ],
 
