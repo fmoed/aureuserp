@@ -53,6 +53,7 @@ return [
             'day-period'    => 'فترات اليوم',
             'work-from'     => 'العمل من',
             'work-to'       => 'العمل إلى',
+            'duration'      => 'المدة',
             'starting-date' => 'تاريخ البداية',
             'ending-date'   => 'تاريخ النهاية',
             'display-type'  => 'نوع العرض',

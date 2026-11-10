@@ -1,0 +1,152 @@
+<?php
+
+return [
+    'title' => 'Attendance Register',
+
+    'navigation' => [
+        'title' => 'Attendance Register',
+    ],
+
+    'form' => [
+        'heading'         => 'Register filters',
+        'employee'        => 'Employee',
+        'all-employees'   => 'All employees',
+        'department'      => 'Department',
+        'all-departments' => 'All departments',
+        'calendar'        => 'Work schedule',
+        'all-calendars'   => 'All work schedules',
+        'view-mode'       => 'Time range',
+        'mode-month'      => 'Month',
+        'mode-range'      => 'Custom range',
+        'mode-year'       => 'Year',
+        'month'           => 'Month',
+        'year'            => 'Year',
+        'year-hint'       => 'Data available for the last two years.',
+        'date-from'       => 'From',
+        'date-to'         => 'To',
+        'range-hint'      => 'Maximum :days days.',
+        'apply'           => 'Apply',
+        'reset'           => 'Reset',
+        'range-too-wide'  => 'The range must not exceed :days days.',
+        'month-future'    => 'The selected month is in the future.',
+    ],
+
+    'filter-chips' => [
+        'period'     => 'Period',
+        'employee'   => 'Employee',
+        'department' => 'Department',
+        'calendar'   => 'Work schedule',
+        'clear'      => 'Clear',
+    ],
+
+    'table' => [
+        'columns' => [
+            'employee'          => 'Employee',
+            'schedule'          => 'Work schedule',
+            'rate'              => 'Absence rate',
+            'workdays'          => 'Workdays',
+            'scheduled-hours'   => 'Scheduled hours',
+            'worked-hours'      => 'Worked hours',
+            'overtime-hours'    => 'Overtime',
+            'late-minutes'      => 'Late',
+            'late-occurrences'  => ':count late occurrences',
+            'variance-hours'    => 'Variance',
+            'missing-checkouts' => 'Missing check-outs',
+            'break'             => 'Break',
+            'late'              => 'Late',
+            'early-leave'       => 'Early leave',
+            'estimated'         => 'Estimated',
+        ],
+
+        'empty' => 'No workdays in this range. Employees without a work schedule are hidden.',
+
+        'view' => [
+            'totals' => 'Employee summary',
+            'days'   => 'Daily register',
+        ],
+    ],
+
+    'statuses' => [
+        'short' => [
+            'present'          => 'P',
+            'absent'           => 'A',
+            'on-leave'         => 'L',
+            'half-day'         => '½',
+            'pending'          => '?',
+            'holiday'          => 'H',
+            'weekly-off'       => 'W',
+            'missing-checkout' => '!',
+            'weekend-present'  => 'W+',
+            'holiday-present'  => 'H+',
+            'future'           => '',
+        ],
+        'present'          => 'Present',
+        'absent'           => 'Absent',
+        'on-leave'         => 'On leave',
+        'pending'          => 'Pending',
+        'holiday'          => 'Holiday',
+        'half-day'         => 'Half day',
+        'weekly-off'       => 'Weekly off',
+        'missing-checkout' => 'Missing check-out',
+        'weekend-present'  => 'Weekend work',
+        'holiday-present'  => 'Holiday work',
+        'future'           => 'Upcoming',
+    ],
+
+    'empty' => [
+        'heading' => 'No workdays to show.',
+    ],
+
+    'grid' => [
+        'summary'      => 'Summary',
+        'pending-note' => 'Pending leave counts as absent until approved.',
+        'chart'        => 'Present vs absent per day',
+        'legend'       => 'Status guide',
+        'totals'       => [
+            'employees' => 'Employees',
+            'present'   => 'Present days',
+            'absent'    => 'Absent days',
+            'on-leave'  => 'Leave days',
+            'pending'   => 'Pending',
+            'holidays'  => 'Holidays',
+            'rate'      => 'Absence rate',
+        ],
+    ],
+
+    'export' => 'Absence summary (one row per employee)',
+
+    'export-detail' => 'Attendance Register (Matrix Grid)',
+
+    'inspect' => [
+        'action_label'        => 'Day Details',
+        'heading'             => 'Daily Attendance Details',
+        'description'         => 'Breakdown of scheduled shift, recorded sessions, and raw biometric punches.',
+        'close'               => 'Close',
+        'evaluation_title'    => 'Day Evaluation',
+        'status'              => 'Status',
+        'shift'               => 'Scheduled Shift',
+        'no_shift'            => 'No shift assigned',
+        'worked_hours'        => 'Worked / Scheduled Hours',
+        'first_in_last_out'   => 'First In → Last Out',
+        'late_minutes'        => 'Late',
+        'early_leave_minutes' => 'Early Leave',
+        'overtime_minutes'    => 'Overtime',
+        'break_minutes'       => 'Break',
+        'sessions_title'      => 'Attendance Sessions',
+        'no_sessions'         => 'No attendance sessions recorded for this day.',
+        'missing_checkout'    => 'Missing check-out (!)',
+        'duration'            => 'Duration',
+        'raw_punches_title'   => 'Raw Biometric Punches Timeline',
+        'no_punches'          => 'No raw punches recorded for this day.',
+        'duplicate_scan'      => 'Duplicate Scan (Ignored)',
+        'recorded'            => 'Punched',
+        'paired'              => 'Paired',
+        'unpaired'            => 'Unpaired',
+        'actions'             => [
+            'complete_checkout'  => 'Complete Missing Check-out',
+            'checkout_completed' => 'Check-out completed successfully.',
+            'add_manual'         => 'Add Manual Attendance',
+            'manual_added'       => 'Manual attendance recorded successfully.',
+        ],
+    ],
+];

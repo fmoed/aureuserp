@@ -1,0 +1,114 @@
+<?php
+
+namespace Webkul\Attendance\Filament\Exports;
+
+use Filament\Actions\Exports\ExportColumn;
+use Filament\Actions\Exports\Exporter;
+use Filament\Actions\Exports\Models\Export;
+use Webkul\Attendance\Filament\Exports\Concerns\HasAbsenceExportOptions;
+use Webkul\Employee\Models\Employee;
+
+/**
+ * Daily register export: one row per employee and workday (date, day of
+ * week, standard status code, minutes). Fan-out is handled by
+ * PrepareAbsenceDetailExport / ExportAbsenceDetailCsv because Filament's
+ * exporter contract returns exactly one row per record.
+ */
+class AbsenceDetailExporter extends Exporter
+{
+    use HasAbsenceExportOptions;
+
+    protected static ?string $model = Employee::class;
+
+    protected static function exportFilePrefix(): string
+    {
+        return 'absence-detail';
+    }
+
+    /**
+     * Row cap counts export rows (employee × workday), not employees.
+     * Config-overridable so operations can tighten it without a release
+     * and tests can exercise the abort path cheaply.
+     */
+    public static function maxRows(): int
+    {
+        return (int) config('attendance.export.max_detail_rows', 10000);
+    }
+
+    /**
+     * @return array<int, ExportColumn>
+     */
+    public static function getColumns(): array
+    {
+        return [
+            ExportColumn::make('employee')
+                ->label(__('attendance::filament/exports/absence-detail.columns.employee')),
+            ExportColumn::make('schedule')
+                ->label(__('attendance::filament/exports/absence-detail.columns.schedule')),
+            ExportColumn::make('workdays')
+                ->label(__('attendance::filament/exports/absence-detail.columns.workdays')),
+            ExportColumn::make('present')
+                ->label(__('attendance::filament/exports/absence-detail.columns.present')),
+            ExportColumn::make('absent')
+                ->label(__('attendance::filament/exports/absence-detail.columns.absent')),
+            ExportColumn::make('on_leave')
+                ->label(__('attendance::filament/exports/absence-detail.columns.on-leave')),
+            ExportColumn::make('scheduled-minutes')
+                ->label(__('attendance::filament/exports/absence-detail.columns.scheduled-minutes')),
+            ExportColumn::make('worked-minutes')
+                ->label(__('attendance::filament/exports/absence-detail.columns.worked-minutes')),
+            ExportColumn::make('overtime-minutes')
+                ->label(__('attendance::filament/exports/absence-detail.columns.overtime-minutes')),
+            ExportColumn::make('late-minutes')
+                ->label(__('attendance::filament/exports/absence-detail.columns.late-minutes')),
+            ExportColumn::make('early-leave-minutes')
+                ->label(__('attendance::filament/exports/absence-detail.columns.early-leave-minutes')),
+            ExportColumn::make('variance-minutes')
+                ->label(__('attendance::filament/exports/absence-detail.columns.variance-minutes')),
+            ExportColumn::make('absence_rate')
+                ->label(__('attendance::filament/exports/absence-detail.columns.absence-rate')),
+        ];
+    }
+
+    public static function getCompletedNotificationTitle(Export $export): string
+    {
+        if (static::hitRowCap($export)) {
+            return __('attendance::filament/exports/absence-detail.notification.cap-title');
+        }
+
+        return parent::getCompletedNotificationTitle($export);
+    }
+
+    public static function getCompletedNotificationBody(Export $export): string
+    {
+        if (static::hitRowCap($export)) {
+            return __('attendance::filament/exports/absence-detail.notification.cap-reached', [
+                'count' => number_format($export->total_rows),
+                'limit' => number_format(static::maxRows()),
+            ]);
+        }
+
+        $body = __('attendance::filament/exports/absence-detail.notification.completed', [
+            'count' => number_format($export->successful_rows),
+        ]);
+
+        if ($failedRowsCount = $export->getFailedRowsCount()) {
+            $body .= ' '.__('attendance::filament/exports/absence-detail.notification.failed', [
+                'count' => number_format($failedRowsCount),
+            ]);
+        }
+
+        return $body;
+    }
+
+    /**
+     * The prepare job aborts (writing no data rows) when the requested
+     * range exceeds the row cap: every row failed, and the recount shows
+     * the request was over the limit rather than failing mid-flight.
+     */
+    protected static function hitRowCap(Export $export): bool
+    {
+        return $export->successful_rows === 0
+            && $export->total_rows > static::maxRows();
+    }
+}

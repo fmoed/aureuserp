@@ -1,0 +1,67 @@
+<?php
+
+namespace Webkul\Attendance;
+
+use Filament\Panel;
+use Illuminate\Support\Facades\Gate;
+use Webkul\Attendance\Console\ProcessEventsCommand;
+use Webkul\Attendance\Models\Attendance;
+use Webkul\Attendance\Models\AttendanceEvent;
+use Webkul\Attendance\Policies\AttendanceEventPolicy;
+use Webkul\Attendance\Policies\AttendancePolicy;
+use Webkul\PluginManager\Console\Commands\InstallCommand;
+use Webkul\PluginManager\Console\Commands\UninstallCommand;
+use Webkul\PluginManager\Package;
+use Webkul\PluginManager\PackageServiceProvider;
+
+class AttendanceServiceProvider extends PackageServiceProvider
+{
+    public static string $name = 'attendance';
+
+    public function configureCustomPackage(Package $package): void
+    {
+        $package->name(static::$name)
+            ->hasTranslations()
+            ->hasViews()
+            ->hasMigrations([
+                '2026_09_24_000001_create_attendance_attendances_table',
+                '2026_09_30_000001_add_source_label_to_attendance_attendances_table',
+                '2026_10_01_000001_create_attendance_events_table',
+                '2026_10_05_000001_allow_multiple_sessions_per_day_on_attendance_attendances_table',
+                '2026_11_07_000001_add_shift_policies_to_calendars_and_attendances_tables',
+            ])
+            ->hasCommands([
+                ProcessEventsCommand::class,
+            ])
+            ->hasDependencies([
+                'employees',
+            ])
+            ->runsMigrations()
+            ->hasSettings([
+                '2026_10_19_000001_create_attendance_settings',
+                '2026_11_04_000001_add_governance_to_attendance_settings',
+                '2026_11_07_000002_add_enterprise_policies_to_attendance_settings',
+            ])
+            ->runsSettings()
+            ->hasInstallCommand(function (InstallCommand $command) {
+                $command
+                    ->installDependencies()
+                    ->runsMigrations();
+            })
+            ->hasUninstallCommand(function (UninstallCommand $command) {})
+            ->icon('attendance');
+    }
+
+    public function packageRegistered(): void
+    {
+        Panel::configureUsing(function (Panel $panel): void {
+            $panel->plugin(AttendancePlugin::make());
+        });
+    }
+
+    public function packageBooted(): void
+    {
+        Gate::policy(Attendance::class, AttendancePolicy::class);
+        Gate::policy(AttendanceEvent::class, AttendanceEventPolicy::class);
+    }
+}

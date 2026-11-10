@@ -1,0 +1,19 @@
+<?php
+
+return [
+    'columns' => [
+        'employee'  => 'الموظف',
+        'work-date' => 'تاريخ العمل',
+        'check-in'  => 'الحضور',
+        'check-out' => 'الانصراف',
+        'worked'    => 'المدة',
+        'break'     => 'استراحة',
+        'estimated' => 'مقدّر',
+        'source'    => 'المصدر',
+    ],
+
+    'notification' => [
+        'completed' => 'تم تصدير :count صف.',
+        'failed'    => 'فشل :count صف.',
+    ],
+];

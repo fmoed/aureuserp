@@ -18,13 +18,13 @@ use Webkul\PluginManager\PackageServiceProvider;
 use Webkul\Security\Livewire\AcceptInvitation;
 use Webkul\Security\Models\Role;
 use Webkul\Security\Policies\RolePolicy;
+use Webkul\Support\Assets\SupportCss;
 use Webkul\Support\Database\Dialects\DatabaseDialect;
 use Webkul\Support\Database\Dialects\MySqlDialect;
 use Webkul\Support\Database\Dialects\PostgresDialect;
 use Webkul\Support\Http\Controllers\CompanyContextController;
 use Webkul\Support\Livewire\QuickNavigation;
 use Webkul\Support\Services\CompanyContext;
-use Webkul\Support\Support\VersionedCss;
 use Webkul\Support\Traits\HasFilamentDefaults;
 use Webkul\Support\Traits\HasRouterMacros;
 use Webkul\Support\Traits\HasRtlSupport;
@@ -82,6 +82,7 @@ class SupportServiceProvider extends PackageServiceProvider
                 '2026_07_16_000001_create_quick_navigation_favorites_table',
                 '2026_07_30_110000_null_company_on_utm_campaigns',
                 '2026_08_03_120000_create_sequences_table',
+                '2026_10_21_000001_normalize_calendar_attendances_hours',
             ])
             ->runsMigrations()
             ->hasSettings([
@@ -157,7 +158,7 @@ class SupportServiceProvider extends PackageServiceProvider
         ])->where(['filename' => '[ \w\\.\\/\\-\\@\(\)\=]+']);
 
         FilamentAsset::register([
-            VersionedCss::make('support', __DIR__.'/../resources/dist/support.css'),
+            SupportCss::make('support', __DIR__.'/../resources/dist/support.css'),
             Js::make('dashboard-charts', __DIR__.'/../resources/js/dashboard-charts.js'),
         ], 'support');
 

@@ -29,10 +29,11 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
-use Webkul\Support\Enums\CalendarDisplayType;
 use Webkul\Support\Enums\DayOfWeek;
 use Webkul\Support\Enums\DayPeriod;
 use Webkul\Support\Enums\WeekType;
+use Webkul\Support\Filament\Resources\CalendarResource\Schemas\CalendarForm;
+use Webkul\Support\Models\CalendarAttendance as CalendarAttendanceModel;
 
 class CalendarAttendance extends RelationManager
 {
@@ -54,7 +55,7 @@ class CalendarAttendance extends RelationManager
                     ->schema([
                         TextInput::make('name')
                             ->label(__('support::filament/resources/calendar/relation-managers/working-hours.form.sections.general.fields.attendance-name'))
-                            ->required()
+                            ->placeholder('e.g. Monday - Morning (auto-generated if empty)')
                             ->maxLength(255),
                         Select::make('day_of_week')
                             ->label(__('support::filament/resources/calendar/relation-managers/working-hours.form.sections.general.fields.day-of-week'))
@@ -76,14 +77,17 @@ class CalendarAttendance extends RelationManager
                             ->label(__('support::filament/resources/calendar/relation-managers/working-hours.form.sections.timing-information.fields.week-type'))
                             ->searchable()
                             ->preload()
+                            ->visible(fn (): bool => (bool) $this->getOwnerRecord()->two_weeks_calendar)
                             ->options(WeekType::options()),
                         TimePicker::make('hour_from')
                             ->label(__('support::filament/resources/calendar/relation-managers/working-hours.form.sections.timing-information.fields.work-from'))
                             ->native(false)
+                            ->seconds(false)
                             ->required(),
                         TimePicker::make('hour_to')
                             ->label(__('support::filament/resources/calendar/relation-managers/working-hours.form.sections.timing-information.fields.work-to'))
                             ->native(false)
+                            ->seconds(false)
                             ->required(),
                     ]),
                 Section::make(__('support::filament/resources/calendar/relation-managers/working-hours.form.sections.date-information.title'))
@@ -95,19 +99,6 @@ class CalendarAttendance extends RelationManager
                         DatePicker::make('date_to')
                             ->native(false)
                             ->label(__('support::filament/resources/calendar/relation-managers/working-hours.form.sections.date-information.fields.ending-date')),
-                    ]),
-                Section::make(__('support::filament/resources/calendar/relation-managers/working-hours.form.sections.additional-information.title'))
-                    ->columns(1)
-                    ->schema([
-                        Select::make('display_type')
-                            ->label(__('support::filament/resources/calendar/relation-managers/working-hours.form.sections.additional-information.fields.display-type'))
-                            ->options(CalendarDisplayType::options()),
-                        TextInput::make('duration_days')
-                            ->label(__('support::filament/resources/calendar/relation-managers/working-hours.form.sections.additional-information.fields.durations-days'))
-                            ->numeric()
-                            ->default(1)
-                            ->minValue(0)
-                            ->maxValue(99999999999),
                     ]),
             ]);
     }
@@ -125,24 +116,41 @@ class CalendarAttendance extends RelationManager
                     ->sortable(),
                 TextColumn::make('day_of_week')
                     ->label(__('support::filament/resources/calendar/relation-managers/working-hours.table.columns.day-of-week'))
-                    ->formatStateUsing(fn ($state) => DayOfWeek::options()[$state]),
+                    ->formatStateUsing(fn ($state) => DayOfWeek::options()[$state] ?? $state),
                 TextColumn::make('day_period')
                     ->label(__('support::filament/resources/calendar/relation-managers/working-hours.table.columns.day-period'))
-                    ->formatStateUsing(fn ($state) => ucfirst($state))
+                    ->formatStateUsing(fn ($state) => blank($state) ? $state : ucfirst($state))
                     ->badge()
                     ->color('secondary'),
                 TextColumn::make('hour_from')
                     ->label(__('support::filament/resources/calendar/relation-managers/working-hours.table.columns.work-from')),
                 TextColumn::make('hour_to')
                     ->label(__('support::filament/resources/calendar/relation-managers/working-hours.table.columns.work-to')),
+                TextColumn::make('duration')
+                    ->label(__('support::filament/resources/calendar/relation-managers/working-hours.table.columns.duration'))
+                    ->state(function (CalendarAttendanceModel $record): string {
+                        if ($record->day_period === 'lunch') {
+                            return '—';
+                        }
+
+                        $minutes = CalendarForm::periodDurationMinutes(
+                            (string) ($record->getRawOriginal('hour_from') ?? $record->hour_from),
+                            (string) ($record->getRawOriginal('hour_to') ?? $record->hour_to),
+                        );
+
+                        $hours = (float) round($minutes / 60, 2);
+
+                        return "{$hours}h";
+                    }),
                 TextColumn::make('date_from')
                     ->label(__('support::filament/resources/calendar/relation-managers/working-hours.table.columns.starting-date'))
                     ->date(),
                 TextColumn::make('date_to')
                     ->label(__('support::filament/resources/calendar/relation-managers/working-hours.table.columns.ending-date'))
                     ->date(),
-                TextColumn::make('display_type')
-                    ->label(__('support::filament/resources/calendar/relation-managers/working-hours.table.columns.display-type'))
+                TextColumn::make('week_type')
+                    ->label(__('support::filament/resources/calendar/relation-managers/working-hours.form.sections.timing-information.fields.week-type'))
+                    ->visible(fn (): bool => (bool) $this->getOwnerRecord()->two_weeks_calendar)
                     ->badge(),
                 TextColumn::make('created_at')
                     ->label(__('support::filament/resources/calendar/relation-managers/working-hours.table.columns.created-at'))
@@ -155,11 +163,6 @@ class CalendarAttendance extends RelationManager
                 SelectFilter::make('day_of_week')
                     ->label(__('support::filament/resources/calendar/relation-managers/working-hours.table.filters.day-of-week'))
                     ->options(DayOfWeek::options()),
-                SelectFilter::make('display_type')
-                    ->label(__('support::filament/resources/calendar/relation-managers/working-hours.table.filters.display-type'))
-                    ->searchable()
-                    ->preload()
-                    ->options(CalendarDisplayType::options()),
             ])
             ->headerActions([
                 CreateAction::make()
@@ -170,11 +173,20 @@ class CalendarAttendance extends RelationManager
                             ->body(__('support::filament/resources/calendar/relation-managers/working-hours.table.actions.create.notification.body')),
                     )
                     ->icon('heroicon-o-plus-circle')
-                    ->hidden(fn (RelationManager $livewire) => $livewire->getOwnerRecord()->flexible_hours ?? false)
-                    ->mutateDataUsing(function (array $data) {
+                    ->mutateDataUsing(function (array $data): array {
                         $data['sort'] = $this->getOwnerRecord()->attendance()->count() + 1;
 
+                        if (blank($data['name'] ?? null)) {
+                            $day = ucfirst((string) ($data['day_of_week'] ?? 'Day'));
+                            $period = ucfirst((string) ($data['day_period'] ?? 'Morning'));
+                            $data['name'] = "{$day} - {$period}";
+                        }
+
                         return $data;
+                    })
+                    ->after(function (): void {
+                        $this->getOwnerRecord()->recalculateSummaryHours();
+                        $this->dispatch('refreshCalendarSummaryHours');
                     }),
             ])
             ->recordActions([
@@ -186,10 +198,18 @@ class CalendarAttendance extends RelationManager
                                 ->title(__('support::filament/resources/calendar/relation-managers/working-hours.table.actions.edit.notification.title'))
                                 ->body(__('support::filament/resources/calendar/relation-managers/working-hours.table.actions.edit.notification.body')),
                         )
-                        ->mutateDataUsing(function (array $data) {
-                            $data['sort'] = $this->getOwnerRecord()->attendance()->count() + 1;
+                        ->mutateDataUsing(function (array $data): array {
+                            if (blank($data['name'] ?? null)) {
+                                $day = ucfirst((string) ($data['day_of_week'] ?? 'Day'));
+                                $period = ucfirst((string) ($data['day_period'] ?? 'Morning'));
+                                $data['name'] = "{$day} - {$period}";
+                            }
 
                             return $data;
+                        })
+                        ->after(function (): void {
+                            $this->getOwnerRecord()->recalculateSummaryHours();
+                            $this->dispatch('refreshCalendarSummaryHours');
                         }),
                     ViewAction::make(),
                     DeleteAction::make()
@@ -198,39 +218,59 @@ class CalendarAttendance extends RelationManager
                                 ->success()
                                 ->title(__('support::filament/resources/calendar/relation-managers/working-hours.table.actions.delete.notification.title'))
                                 ->body(__('support::filament/resources/calendar/relation-managers/working-hours.table.actions.delete.notification.body')),
-                        ),
+                        )
+                        ->after(function (): void {
+                            $this->getOwnerRecord()->recalculateSummaryHours();
+                            $this->dispatch('refreshCalendarSummaryHours');
+                        }),
                     RestoreAction::make()
                         ->successNotification(
                             Notification::make()
                                 ->success()
                                 ->title(__('support::filament/resources/calendar/relation-managers/working-hours.table.actions.restore.notification.title'))
                                 ->body(__('support::filament/resources/calendar/relation-managers/working-hours.table.actions.restore.notification.body')),
-                        ),
+                        )
+                        ->after(function (): void {
+                            $this->getOwnerRecord()->recalculateSummaryHours();
+                            $this->dispatch('refreshCalendarSummaryHours');
+                        }),
                 ]),
             ])
             ->toolbarActions([
                 BulkActionGroup::make([
-                    DeleteBulkAction::make()
-                        ->successNotification(
-                            Notification::make()
-                                ->success()
-                                ->title(__('support::filament/resources/calendar/relation-managers/working-hours.table.bulk-actions.delete.notification.title'))
-                                ->body(__('support::filament/resources/calendar/relation-managers/working-hours.table.bulk-actions.delete.notification.body')),
-                        ),
-                    ForceDeleteBulkAction::make()
-                        ->successNotification(
-                            Notification::make()
-                                ->success()
-                                ->title(__('support::filament/resources/calendar/relation-managers/working-hours.table.bulk-actions.force-delete.notification.title'))
-                                ->body(__('support::filament/resources/calendar/relation-managers/working-hours.table.bulk-actions.force-delete.notification.body')),
-                        ),
-                    RestoreBulkAction::make()
-                        ->successNotification(
-                            Notification::make()
-                                ->success()
-                                ->title(__('support::filament/resources/calendar/relation-managers/working-hours.table.bulk-actions.restore.notification.title'))
-                                ->body(__('support::filament/resources/calendar/relation-managers/working-hours.table.bulk-actions.restore.notification.body')),
-                        ),
+                        DeleteBulkAction::make()
+                            ->successNotification(
+                                Notification::make()
+                                    ->success()
+                                    ->title(__('support::filament/resources/calendar/relation-managers/working-hours.table.bulk-actions.delete.notification.title'))
+                                    ->body(__('support::filament/resources/calendar/relation-managers/working-hours.table.bulk-actions.delete.notification.body')),
+                            )
+                            ->after(function (): void {
+                                $this->getOwnerRecord()->recalculateSummaryHours();
+                                $this->dispatch('refreshCalendarSummaryHours');
+                            }),
+                        ForceDeleteBulkAction::make()
+                            ->successNotification(
+                                Notification::make()
+                                    ->success()
+                                    ->title(__('support::filament/resources/calendar/relation-managers/working-hours.table.bulk-actions.force-delete.notification.title'))
+                                    ->body(__('support::filament/resources/calendar/relation-managers/working-hours.table.bulk-actions.force-delete.notification.body')),
+                            )
+                            ->after(function (): void {
+                                $this->getOwnerRecord()->recalculateSummaryHours();
+                                $this->dispatch('refreshCalendarSummaryHours');
+                            }),
+                        RestoreBulkAction::make()
+                            ->successNotification(
+                                Notification::make()
+                                    ->success()
+                                    ->title(__('support::filament/resources/calendar/relation-managers/working-hours.table.bulk-actions.restore.notification.title'))
+                                    ->body(__('support::filament/resources/calendar/relation-managers/working-hours.table.bulk-actions.restore.notification.body')),
+                            )
+                            ->after(function (): void {
+                                $this->getOwnerRecord()->recalculateSummaryHours();
+                                $this->dispatch('refreshCalendarSummaryHours');
+                            }),
                 ]),
             ])
             ->reorderable('sort');
@@ -251,7 +291,7 @@ class CalendarAttendance extends RelationManager
                                             ->icon('heroicon-o-clock')
                                             ->label(__('support::filament/resources/calendar/relation-managers/working-hours.infolist.sections.general.entries.name')),
                                         TextEntry::make('day_of_week')
-                                            ->formatStateUsing(fn ($state) => DayOfWeek::options()[$state])
+                                            ->formatStateUsing(fn ($state) => DayOfWeek::options()[$state] ?? $state)
                                             ->placeholder('—')
                                             ->icon('heroicon-o-clock')
                                             ->label(__('support::filament/resources/calendar/relation-managers/working-hours.infolist.sections.general.entries.day-of-week')),
@@ -261,10 +301,10 @@ class CalendarAttendance extends RelationManager
                                         TextEntry::make('day_period')
                                             ->label(__('support::filament/resources/calendar/relation-managers/working-hours.infolist.sections.timing-information.entries.day-period'))
                                             ->placeholder('—')
-                                            ->formatStateUsing(fn ($state) => DayPeriod::options()[$state])
+                                            ->formatStateUsing(fn ($state) => DayPeriod::options()[$state] ?? $state)
                                             ->icon('heroicon-o-clock'),
                                         TextEntry::make('week_type')
-                                            ->formatStateUsing(fn ($state) => WeekType::options()[$state])
+                                            ->formatStateUsing(fn ($state) => WeekType::options()[$state] ?? $state)
                                             ->label(__('support::filament/resources/calendar/relation-managers/working-hours.infolist.sections.timing-information.entries.week-type'))
                                             ->placeholder('—')
                                             ->icon('heroicon-o-clock'),
@@ -292,18 +332,6 @@ class CalendarAttendance extends RelationManager
                                         ->placeholder('—')
                                         ->label(__('support::filament/resources/calendar/relation-managers/working-hours.infolist.sections.date-information.entries.ending-date'))
                                         ->date(),
-                                ]),
-                            Section::make((__('support::filament/resources/calendar/relation-managers/working-hours.infolist.sections.additional-information.title')))
-                                ->schema([
-                                    TextEntry::make('display_type')
-                                        ->formatStateUsing(fn ($state) => CalendarDisplayType::options()[$state])
-                                        ->placeholder('—')
-                                        ->label(__('support::filament/resources/calendar/relation-managers/working-hours.infolist.sections.additional-information.entries.display-type'))
-                                        ->icon('heroicon-o-clock'),
-                                    TextEntry::make('duration_days')
-                                        ->placeholder('—')
-                                        ->label(__('support::filament/resources/calendar/relation-managers/working-hours.infolist.sections.additional-information.entries.durations-days'))
-                                        ->icon('heroicon-o-clock'),
                                 ]),
                         ])->columnSpan(1),
                     ]),

@@ -33,7 +33,6 @@ class PublicHolidayForm
                                 ->label(__('time-off::filament/clusters/configurations/resources/public-holiday.form.fields.date-from'))
                                 ->native(false)
                                 ->required()
-                                ->minDate(now()->toDateString())
                                 ->live()
                                 ->afterStateUpdated(function (callable $set, $state) {
                                     $set('date_to', null);
@@ -41,7 +40,6 @@ class PublicHolidayForm
                                 ->rules([
                                     'required',
                                     'date',
-                                    'after_or_equal:today',
                                 ]),
                             DatePicker::make('date_to')
                                 ->label(__('time-off::filament/clusters/configurations/resources/public-holiday.form.fields.date-to'))

@@ -7,8 +7,16 @@ use Closure;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Facades\Auth;
+use Webkul\Attendance\Enums\BreakPolicy;
+use Webkul\Attendance\Enums\EarlyArrivalPolicy;
+use Webkul\Attendance\Enums\HolidayPolicy;
+use Webkul\Attendance\Enums\MissingCheckoutPolicy;
+use Webkul\Attendance\Enums\PairingMode;
+use Webkul\Attendance\Enums\ShiftType;
+use Webkul\Employee\Models\Employee;
 use Webkul\Field\Traits\HasCustomFields;
 use Webkul\Security\Models\User;
 use Webkul\Support\Database\Factories\CalendarFactory;
@@ -29,10 +37,47 @@ class Calendar extends Model
         'two_weeks_calendar',
         'flexible_hours',
         'full_time_required_hours',
+        'shift_type',
+        'pairing_mode',
+        'check_in_window_before_minutes',
+        'check_out_window_after_minutes',
+        'late_grace_minutes',
+        'early_leave_grace_minutes',
+        'early_arrival_policy',
+        'max_early_offset_minutes',
+        'break_policy',
+        'break_duration_minutes',
+        'break_trigger_minutes',
+        'missing_checkout_policy',
+        'holiday_policy',
+        'half_day_threshold_percent',
+        'absent_threshold_percent',
+        'overtime_enabled',
+        'min_overtime_minutes',
         'resource_type',
         'resource_id',
         'creator_id',
         'company_id',
+    ];
+
+    protected $casts = [
+        'shift_type'                     => ShiftType::class,
+        'pairing_mode'                   => PairingMode::class,
+        'early_arrival_policy'           => EarlyArrivalPolicy::class,
+        'break_policy'                   => BreakPolicy::class,
+        'missing_checkout_policy'        => MissingCheckoutPolicy::class,
+        'holiday_policy'                 => HolidayPolicy::class,
+        'check_in_window_before_minutes' => 'integer',
+        'check_out_window_after_minutes' => 'integer',
+        'late_grace_minutes'             => 'integer',
+        'early_leave_grace_minutes'      => 'integer',
+        'max_early_offset_minutes'       => 'integer',
+        'break_duration_minutes'         => 'integer',
+        'break_trigger_minutes'          => 'integer',
+        'half_day_threshold_percent'     => 'integer',
+        'absent_threshold_percent'       => 'integer',
+        'overtime_enabled'               => 'boolean',
+        'min_overtime_minutes'           => 'integer',
     ];
 
     public static function autoAssignsCompany(): bool
@@ -53,6 +98,18 @@ class Calendar extends Model
     public function attendance()
     {
         return $this->hasMany(CalendarAttendance::class);
+    }
+
+    public function publicHolidays(): HasMany
+    {
+        return $this->hasMany(CalendarLeave::class, 'calendar_id')
+            ->where('time_type', 'leave')
+            ->whereNull('resource_id');
+    }
+
+    public function employees(): HasMany
+    {
+        return $this->hasMany(Employee::class, 'calendar_id');
     }
 
     protected static function boot()
@@ -313,9 +370,16 @@ class Calendar extends Model
                         continue;
                     }
 
-                    $dayFrom = $current->clone()->setTime(0, 0)->addMinutes($attendance->hour_from * 60);
+                    $fromMinutes = CalendarAttendance::minutesOfDay($attendance->getRawOriginal('hour_from') ?? $attendance->hour_from);
+                    $toMinutes = CalendarAttendance::minutesOfDay($attendance->getRawOriginal('hour_to') ?? $attendance->hour_to);
 
-                    $dayTo = $current->clone()->setTime(0, 0)->addMinutes($attendance->hour_to * 60);
+                    $dayFrom = $current->clone()->setTime(0, 0)->addMinutes($fromMinutes);
+
+                    $dayTo = $current->clone()->setTime(0, 0)->addMinutes($toMinutes);
+
+                    if ($toMinutes <= $fromMinutes && $fromMinutes > 0) {
+                        $dayTo->addDay();
+                    }
 
                     if ($attendance->resource_id) {
                         $perResourceResult[$attendance->resource_id][] = [$dayFrom, $dayTo, $attendance];
@@ -330,14 +394,34 @@ class Calendar extends Model
 
         $resultPerTz = [];
 
+        // A night interval belongs to the day it starts on. When that day is
+        // inside the requested range, keep its full natural end instead of
+        // clipping it at the last requested midnight (a 22:00-06:00 shift
+        // queried for one day must stay eight hours, not two).
+        $clip = function (array $val, array $bounds, string $resourceTz): array {
+            $start = Carbon::parse($val[0])->setTimezone($resourceTz);
+            $end = Carbon::parse($val[1])->setTimezone($resourceTz);
+
+            $clippedStart = $start->lt($bounds[0]) ? $bounds[0]->copy() : $start;
+
+            $startsInsideRange = $start->gte($bounds[0]) && $start->lte($bounds[1]);
+            $crossesMidnight = $end->toDateString() !== $start->toDateString();
+
+            $clippedEnd = ($startsInsideRange && $crossesMidnight) || $end->lte($bounds[1])
+                ? $end
+                : $bounds[1]->copy();
+
+            return [$clippedStart, $clippedEnd, $val[2]];
+        };
+
         foreach ($resourcesPerTz as $resourceTz => $tzResources) {
             $bounds = $boundsPerTz[$resourceTz];
 
-            $resultPerTz[$resourceTz] = collect($baseResult)->map(fn ($val) => [
-                Carbon::parse(max($bounds[0], Carbon::parse($val[0])->setTimezone($resourceTz))),
-                Carbon::parse(min($bounds[1], Carbon::parse($val[1])->setTimezone($resourceTz))),
-                $val[2],
-            ])->filter(fn ($interval) => $interval[0]->lt($interval[1]))->values()->all();
+            $resultPerTz[$resourceTz] = collect($baseResult)
+                ->map(fn ($val) => $clip($val, $bounds, $resourceTz))
+                ->filter(fn ($interval) => $interval[0]->lt($interval[1]))
+                ->values()
+                ->all();
         }
 
         $resultPerResourceId = [];
@@ -351,11 +435,11 @@ class Calendar extends Model
                 if ($resource && isset($perResourceResult[$resourceId])) {
                     $bounds = $boundsPerTz[$resourceTz];
 
-                    $resourceSpecificResult = collect($perResourceResult[$resourceId])->map(fn ($val) => [
-                        Carbon::parse(max($bounds[0], Carbon::parse($val[0])->setTimezone($resourceTz))),
-                        Carbon::parse(min($bounds[1], Carbon::parse($val[1])->setTimezone($resourceTz))),
-                        $val[2],
-                    ])->filter(fn ($interval) => $interval[0]->lt($interval[1]))->values()->all();
+                    $resourceSpecificResult = collect($perResourceResult[$resourceId])
+                        ->map(fn ($val) => $clip($val, $bounds, $resourceTz))
+                        ->filter(fn ($interval) => $interval[0]->lt($interval[1]))
+                        ->values()
+                        ->all();
 
                     $resultPerResourceId[$resourceId] = collect(array_merge($res, $resourceSpecificResult));
                 } else {
@@ -499,5 +583,71 @@ class Calendar extends Model
         }
 
         return $result;
+    }
+
+    public function recalculateSummaryHours(): void
+    {
+        if ($this->shift_type === ShiftType::Open) {
+            return;
+        }
+
+        $rows = $this->attendance()
+            ->whereNull('display_type')
+            ->whereNull('resource_id')
+            ->whereNull('date_from')
+            ->whereNull('date_to')
+            ->where('day_period', '!=', 'lunch')
+            ->get();
+
+        if ($rows->isEmpty()) {
+            return;
+        }
+
+        $isTwoWeeks = (bool) $this->two_weeks_calendar;
+        $grouped = $rows->groupBy(function (CalendarAttendance $row) use ($isTwoWeeks): string {
+            $key = strtolower((string) $row->day_of_week);
+            if ($isTwoWeeks && $row->week_type !== null) {
+                $key .= ':'.$row->week_type;
+            }
+
+            return $key;
+        });
+
+        $totalMinutes = 0;
+        $workdayCount = 0;
+
+        foreach ($grouped as $dayRows) {
+            $gross = 0;
+            foreach ($dayRows as $row) {
+                $from = (int) round(CalendarAttendance::minutesOfDay($row->getRawOriginal('hour_from') ?? $row->hour_from));
+                $to = (int) round(CalendarAttendance::minutesOfDay($row->getRawOriginal('hour_to') ?? $row->hour_to));
+                if ($to <= $from && $from > 0) {
+                    $to += 1440;
+                }
+                $gross += max(0, $to - $from);
+            }
+
+            if ($gross > 0) {
+                $totalMinutes += $gross;
+                $workdayCount++;
+            }
+        }
+
+        if ($workdayCount === 0) {
+            return;
+        }
+
+        if ($isTwoWeeks) {
+            $weeklyHours = round(($totalMinutes / 2) / 60, 2);
+            $dailyHours = round(($totalMinutes / $workdayCount) / 60, 2);
+        } else {
+            $weeklyHours = round($totalMinutes / 60, 2);
+            $dailyHours = round(($totalMinutes / $workdayCount) / 60, 2);
+        }
+
+        $this->forceFill([
+            'hours_per_day'            => $dailyHours,
+            'full_time_required_hours' => $weeklyHours,
+        ])->saveQuietly();
     }
 }

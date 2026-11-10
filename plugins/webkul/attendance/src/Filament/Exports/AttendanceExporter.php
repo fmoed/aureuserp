@@ -1,0 +1,96 @@
+<?php
+
+namespace Webkul\Attendance\Filament\Exports;
+
+use Filament\Actions\Exports\ExportColumn;
+use Filament\Actions\Exports\Exporter;
+use Filament\Actions\Exports\Models\Export;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Carbon;
+use Webkul\Attendance\Filament\Exports\Concerns\HasAbsenceExportOptions;
+use Webkul\Attendance\Filament\Resources\AttendanceResource\Tables\AttendancesTable;
+use Webkul\Attendance\Filament\Tables\AttendanceRegisterTable;
+use Webkul\Attendance\Models\Attendance;
+use Webkul\Attendance\Policies\AttendancePolicy;
+use Webkul\Attendance\Services\AttendanceOverviewService;
+
+class AttendanceExporter extends Exporter
+{
+    use HasAbsenceExportOptions;
+
+    protected static ?string $model = Attendance::class;
+
+    protected static function exportFilePrefix(): string
+    {
+        return 'attendances';
+    }
+
+    public static function scopeQuery(Builder $query, array $options): Builder
+    {
+        return AttendancePolicy::scopeQuery($query)
+            ->when(
+                $options['employee_id'] ?? null,
+                fn (Builder $query, mixed $employeeId) => $query->whereIn('employee_id', (array) $employeeId)
+            )
+            ->when(
+                $options['date_from'] ?? null,
+                fn (Builder $query, mixed $dateFrom) => $query->whereDate('work_date', '>=', $dateFrom)
+            )
+            ->when(
+                $options['date_to'] ?? null,
+                fn (Builder $query, mixed $dateTo) => $query->whereDate('work_date', '<=', $dateTo)
+            )
+            ->when(
+                $options['department_id'] ?? null,
+                fn (Builder $query, mixed $departmentId) => $query->whereHas('employee', fn (Builder $employee) => AttendanceOverviewService::scopeByDepartment($employee, (array) $departmentId))
+            )
+            ->when(
+                $options['calendar_id'] ?? null,
+                fn (Builder $query, mixed $calendarId) => $query->whereHas('employee', fn (Builder $employee) => AttendanceOverviewService::scopeByCalendar($employee, (array) $calendarId))
+            );
+    }
+
+    public static function getColumns(): array
+    {
+        return [
+            ExportColumn::make('employee.name')
+                ->label(__('attendance::filament/exports/attendance.columns.employee')),
+            ExportColumn::make('work_date')
+                ->label(__('attendance::filament/exports/attendance.columns.work-date'))
+                ->formatStateUsing(fn ($state): string => $state ? Carbon::parse($state)->format('Y-m-d') : ''),
+            ExportColumn::make('check_in')
+                ->label(__('attendance::filament/exports/attendance.columns.check-in'))
+                ->formatStateUsing(fn ($state, Attendance $record): string => AttendancesTable::employeeWallClock($record, 'check_in')?->format('Y-m-d H:i:s') ?? ''),
+            ExportColumn::make('check_out')
+                ->label(__('attendance::filament/exports/attendance.columns.check-out'))
+                ->formatStateUsing(fn ($state, Attendance $record): string => AttendancesTable::employeeWallClock($record, 'check_out')?->format('Y-m-d H:i:s') ?? ''),
+            ExportColumn::make('worked_minutes')
+                ->label(__('attendance::filament/exports/attendance.columns.worked'))
+                ->formatStateUsing(fn ($state) => $state === null ? '' : intdiv((int) $state, 60).'h '.((int) $state % 60).'m'),
+            ExportColumn::make('break_minutes')
+                ->label(__('attendance::filament/exports/attendance.columns.break'))
+                ->formatStateUsing(fn ($state): string => AttendanceRegisterTable::formatMinutesToHours((int) ($state ?? 0))),
+            ExportColumn::make('is_estimated')
+                ->label(__('attendance::filament/exports/attendance.columns.estimated'))
+                ->formatStateUsing(fn ($state): string => $state ? __('attendance::filament/exports/attendance.columns.estimated') : ''),
+            ExportColumn::make('source')
+                ->label(__('attendance::filament/exports/attendance.columns.source'))
+                ->formatStateUsing(fn (?string $state, Attendance $record): string => Attendance::sourceDisplayName($state ?? $record->source, $record->source_label)),
+        ];
+    }
+
+    public static function getCompletedNotificationBody(Export $export): string
+    {
+        $body = __('attendance::filament/exports/attendance.notification.completed', [
+            'count' => number_format($export->successful_rows),
+        ]);
+
+        if ($failedRowsCount = $export->getFailedRowsCount()) {
+            $body .= ' '.__('attendance::filament/exports/attendance.notification.failed', [
+                'count' => number_format($failedRowsCount),
+            ]);
+        }
+
+        return $body;
+    }
+}

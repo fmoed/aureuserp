@@ -38,8 +38,9 @@ trait TimeOffHelper
         $this->handleLeaveAllocation($data, $action);
 
         $data['state'] = State::CONFIRM->value;
+        $data['request_date_to'] ??= $data['request_date_from'] ?? null;
         $data['date_from'] = $data['request_date_from'] ?? null;
-        $data['date_to'] = $data['request_date_to'] ?? null;
+        $data['date_to'] = $data['request_date_to'];
 
         return $data;
     }

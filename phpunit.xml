@@ -50,6 +50,12 @@
         <testsuite name="SecurityFeature">
             <directory>plugins/webkul/security/tests/Feature</directory>
         </testsuite>
+        <testsuite name="AttendanceFeature">
+            <directory>plugins/webkul/attendance/tests/Feature</directory>
+        </testsuite>
+        <testsuite name="BiometricAttendanceFeature">
+            <directory>plugins/webkul/biometric-attendance/tests/Feature</directory>
+        </testsuite>
     </testsuites>
     <source>
         <include>

@@ -11,10 +11,12 @@ return [
 
     'form' => [
         'fields' => [
-            'name'       => 'Nombre',
-            'start-date' => 'Fecha de inicio',
-            'end-date'   => 'Fecha de fin',
-            'color'      => 'Color',
+            'name'                 => 'Nombre',
+            'start-date'           => 'Fecha de inicio',
+            'end-date'             => 'Fecha de fin',
+            'color'                => 'Color',
+            'calendar'             => 'Turno',
+            'calendar-placeholder' => 'Todos los turnos (empresa)',
         ],
     ],
 
