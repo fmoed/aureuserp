@@ -6,6 +6,7 @@ use Closure;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Webkul\Attendance\Enums\PairingMode;
 use Webkul\Attendance\Models\Attendance;
@@ -400,5 +401,76 @@ class EventPairingService
             ->orderBy('check_in')
             ->orderBy('id')
             ->get();
+    }
+
+    /**
+     * Pairs all pending (unlinked) attendance events across every employee and writer.
+     *
+     * @return array{locked: bool, processed: int, rows: int, open: int}
+     */
+    public function processPending(): array
+    {
+        $lock = Cache::lock('attendance:process-events', 600);
+
+        if (! $lock->get()) {
+            return ['locked' => true, 'processed' => 0, 'rows' => 0, 'open' => 0];
+        }
+
+        try {
+            $groups = AttendanceEvent::query()
+                ->withoutGlobalScope(CompanyScope::class)
+                ->whereNull('attendance_id')
+                ->select(['employee_id', 'source'])
+                ->distinct()
+                ->get()
+                ->map(fn (AttendanceEvent $event): array => [
+                    'employee_id' => $event->employee_id,
+                    'writer'      => Attendance::sourceWriter($event->source),
+                ])
+                ->filter(fn (array $group): bool => $group['writer'] !== null)
+                ->unique(fn (array $group): string => $group['employee_id'].'|'.$group['writer']);
+
+            $employees = Employee::query()
+                ->withoutGlobalScope(CompanyScope::class)
+                ->whereKey($groups->pluck('employee_id')->unique()->all())
+                ->get()
+                ->keyBy('id');
+
+            $processed = 0;
+            $rowIds = [];
+
+            foreach ($groups as $group) {
+                $employee = $employees->get($group['employee_id']);
+
+                if (! $employee) {
+                    continue;
+                }
+
+                $result = $this->rebuild($employee, $group['writer']);
+
+                $processed += $result['events'];
+
+                foreach ($result['rows'] as $rowId) {
+                    $rowIds[$rowId] = true;
+                }
+            }
+
+            $open = $rowIds === []
+                ? 0
+                : Attendance::query()
+                    ->withoutGlobalScope(CompanyScope::class)
+                    ->whereKey(array_keys($rowIds))
+                    ->whereNull('check_out')
+                    ->count();
+
+            return [
+                'locked'    => false,
+                'processed' => $processed,
+                'rows'      => count($rowIds),
+                'open'      => $open,
+            ];
+        } finally {
+            $lock->release();
+        }
     }
 }

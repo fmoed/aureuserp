@@ -10,6 +10,7 @@ use Webkul\Attendance\Models\Attendance;
 use Webkul\Attendance\Models\AttendanceEvent;
 use Webkul\Attendance\Writers\WriterRegistry;
 use Webkul\Employee\Models\Employee;
+use Webkul\Security\Models\User;
 
 beforeEach(function () {
     TestBootstrapHelper::ensurePluginInstalled('attendance');
@@ -288,4 +289,32 @@ it('skips the run while another pairing run holds the lock', function () {
     Artisan::call('attendance:process-events');
 
     expect(Attendance::where('employee_id', $employee->id)->count())->toBe(1);
+});
+
+it('rebuilds the previous employee session using its actual work_date even when checkout punch is more than 3 days later', function () {
+    $employee1 = Employee::factory()->create(['time_zone' => 'UTC', 'user_id' => User::factory()]);
+    $employee2 = Employee::factory()->create(['time_zone' => 'UTC', 'user_id' => User::factory()]);
+
+    $inEvent = EventGateway::push($employee1->id, '2026-10-01 08:00:00', AttendanceEvent::DIRECTION_IN, 'biometric-attendance:3', 'evt-in-1');
+    $outEvent = EventGateway::push($employee1->id, '2026-10-05 17:00:00', AttendanceEvent::DIRECTION_OUT, 'biometric-attendance:3', 'evt-out-far');
+
+    $attendance = Attendance::create([
+        'employee_id' => $employee1->id,
+        'work_date'   => '2026-10-01',
+        'check_in'    => '2026-10-01 08:00:00',
+        'check_out'   => '2026-10-05 17:00:00',
+        'source'      => 'biometric-attendance:3',
+        'company_id'  => $employee1->company_id,
+    ]);
+
+    $inEvent->update(['attendance_id' => $attendance->id]);
+    $outEvent->update(['attendance_id' => $attendance->id]);
+
+    // Reassign the far checkout punch (2026-10-05) to employee2
+    EventGateway::push($employee2->id, '2026-10-05 17:00:00', AttendanceEvent::DIRECTION_OUT, 'biometric-attendance:3', 'evt-out-far');
+
+    $rebuilt = Attendance::where('employee_id', $employee1->id)->first();
+    expect($rebuilt)->not->toBeNull()
+        ->and($rebuilt->getRawOriginal('work_date'))->toBe('2026-10-01')
+        ->and($rebuilt->check_out)->toBeNull();
 });
