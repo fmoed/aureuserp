@@ -3,13 +3,13 @@
 namespace Webkul\BiometricAttendance\Services;
 
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 use Webkul\Attendance\Events\EventGateway;
 use Webkul\Attendance\Models\AttendanceEvent;
 use Webkul\Attendance\Services\EventPairingService;
+use Webkul\BiometricAttendance\Enums\PunchDirectionMode;
 use Webkul\BiometricAttendance\Models\Device;
 use Webkul\BiometricAttendance\Models\Punch;
 use Webkul\Employee\Models\Employee;
@@ -79,6 +79,12 @@ class SyncPipeline
         ];
 
         foreach ($devices as $device) {
+            $deviceLock = Cache::lock("biometric:sync-device:{$device->id}", 120);
+
+            if (! $deviceLock->get()) {
+                continue;
+            }
+
             try {
                 $result = $this->deviceSync->sync($device);
             } catch (Throwable $e) {
@@ -93,6 +99,8 @@ class SyncPipeline
                 ];
 
                 continue;
+            } finally {
+                $deviceLock->release();
             }
 
             $summary['succeeded']++;
@@ -133,25 +141,31 @@ class SyncPipeline
     {
         $lock = Cache::lock("biometric:sync-device:{$device->id}", 120);
 
-        return $lock->get(function () use ($device): array {
-            $result = $this->deviceSync->sync($device);
+        $result = $lock->get(function () use ($device): array {
+            $syncResult = $this->deviceSync->sync($device);
 
             $push = $this->pushPendingPunches($device);
 
-            $result['pushed'] = $push['pushed'];
-            $result['push_failed'] = $push['failed'];
+            $syncResult['pushed'] = $push['pushed'];
+            $syncResult['push_failed'] = $push['failed'];
 
             $this->pairAttendance();
 
-            return $result;
-        }) ?? [
-            'stored'      => 0,
-            'skipped'     => 0,
-            'backfilled'  => 0,
-            'fetched'     => 0,
-            'pushed'      => 0,
-            'push_failed' => 0,
-        ];
+            return $syncResult;
+        });
+
+        if (! is_array($result)) {
+            return [
+                'stored'      => 0,
+                'skipped'     => 0,
+                'backfilled'  => 0,
+                'fetched'     => 0,
+                'pushed'      => 0,
+                'push_failed' => 0,
+            ];
+        }
+
+        return $result;
     }
 
     /**
@@ -186,9 +200,7 @@ class SyncPipeline
                 )
             ))
             ->with('device')
-            ->orderBy('punch_time')
-            ->orderBy('id')
-            ->get();
+            ->lazyById(500);
 
         $pushed = 0;
         $failed = 0;
@@ -230,7 +242,7 @@ class SyncPipeline
     public function pairAttendance(): void
     {
         if (AttendanceBridge::isAvailable()) {
-            Artisan::call('attendance:process-events');
+            app(EventPairingService::class)->processPending();
         }
     }
 
@@ -265,10 +277,16 @@ class SyncPipeline
 
     protected function directionFor(Punch $punch): int
     {
-        return match ($punch->device?->punch_direction_mode) {
-            'force_in'         => AttendanceEvent::DIRECTION_IN,
-            'force_out'        => AttendanceEvent::DIRECTION_OUT,
-            'strict_direction' => match ((int) $punch->raw_type) {
+        $mode = $punch->device?->punch_direction_mode;
+
+        if (is_string($mode)) {
+            $mode = PunchDirectionMode::tryFrom($mode);
+        }
+
+        return match ($mode) {
+            PunchDirectionMode::ForceIn         => AttendanceEvent::DIRECTION_IN,
+            PunchDirectionMode::ForceOut        => AttendanceEvent::DIRECTION_OUT,
+            PunchDirectionMode::StrictDirection => match ((int) $punch->raw_type) {
                 0, 4    => AttendanceEvent::DIRECTION_IN,
                 1, 5    => AttendanceEvent::DIRECTION_OUT,
                 default => self::UNKNOWN_DIRECTION,

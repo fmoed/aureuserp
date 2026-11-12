@@ -11,6 +11,7 @@ use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Gate;
 use Webkul\Attendance\Policies\AttendancePolicy;
 use Webkul\BiometricAttendance\Filament\Resources\DeviceResource;
 use Webkul\BiometricAttendance\Models\Device;
@@ -18,6 +19,7 @@ use Webkul\BiometricAttendance\Models\Punch;
 use Webkul\BiometricAttendance\Services\DeviceSyncService;
 use Webkul\BiometricAttendance\Services\SyncPipeline;
 use Webkul\Employee\Models\Employee;
+use Webkul\Support\Models\Scopes\CompanyScope;
 
 /**
  * Raw punches of one device, including the punches whose device user id is
@@ -108,7 +110,9 @@ class PunchesRelationManager extends RelationManager
                     ->label(__('biometric-attendance::filament/resources/device/relation-managers/punches.actions.rematch.label'))
                     ->icon('heroicon-o-arrow-path')
                     ->color('warning')
+                    ->authorize(fn (): bool => DeviceResource::canEdit($this->getOwnerRecord()))
                     ->action(function (): void {
+                        /** @var Device $device */
                         $device = $this->getOwnerRecord();
 
                         $backfilled = app(DeviceSyncService::class)->backfillUnmatched($device);
@@ -129,8 +133,9 @@ class PunchesRelationManager extends RelationManager
                 Action::make('assignEmployee')
                     ->label(__('biometric-attendance::filament/resources/device/relation-managers/punches.actions.assign.label'))
                     ->icon('heroicon-o-user-plus')
-                    ->visible(fn (Punch $record): bool => $record->employee_id === null && DeviceResource::canEdit($this->getOwnerRecord()))
-                    ->authorize(fn (): bool => DeviceResource::canEdit($this->getOwnerRecord()))
+                    ->visible(fn (Punch $record): bool => $record->employee_id === null)
+                    ->authorize(fn (): bool => DeviceResource::canEdit($this->getOwnerRecord())
+                        && (bool) auth()->user()?->can('update_employee_employee'))
                     ->schema([
                         Select::make('employee_id')
                             ->label(__('biometric-attendance::filament/resources/device/relation-managers/punches.actions.assign.employee'))
@@ -140,28 +145,44 @@ class PunchesRelationManager extends RelationManager
                             ->required(),
                     ])
                     ->action(function (Punch $record, array $data): void {
-                        $employee = Employee::query()->find($data['employee_id']);
-
-                        if ($employee === null) {
-                            return;
-                        }
-
                         /** @var Device $device */
                         $device = $this->getOwnerRecord();
-                        $barcode = (string) $record->zk_user_id;
 
-                        $conflictQuery = Employee::query()
-                            ->where('barcode', $barcode)
-                            ->where('id', '!=', $employee->id);
+                        $employeeQuery = AttendancePolicy::scopeEmployeeQuery(Employee::query());
 
-                        if ($device?->company_id !== null) {
+                        if ($device->company_id !== null) {
+                            $employeeQuery->where(function (Builder $q) use ($device): void {
+                                $q->where('company_id', $device->company_id)
+                                    ->orWhereNull('company_id');
+                            });
+                        }
+
+                        $employee = $employeeQuery->find($data['employee_id'] ?? null);
+
+                        if ($employee === null) {
+                            abort(403);
+                        }
+
+                        Gate::authorize('update', $employee);
+
+                        $barcode = trim((string) $record->zk_user_id);
+                        $normalizedBarcode = DeviceSyncService::normalizeUserId($barcode);
+
+                        $conflictQuery = Employee::withoutGlobalScope(CompanyScope::class)
+                            ->whereNotNull('barcode')
+                            ->where('barcode', '!=', '')
+                            ->whereKeyNot($employee->getKey());
+
+                        if ($device->company_id !== null) {
                             $conflictQuery->where(function (Builder $q) use ($device): void {
                                 $q->where('company_id', $device->company_id)
                                     ->orWhereNull('company_id');
                             });
                         }
 
-                        $conflictEmployee = $conflictQuery->first();
+                        $conflictEmployee = $conflictQuery
+                            ->get(['id', 'name', 'barcode'])
+                            ->first(fn (Employee $candidate): bool => DeviceSyncService::normalizeUserId((string) $candidate->barcode) === $normalizedBarcode);
 
                         if ($conflictEmployee !== null) {
                             Notification::make()
@@ -175,15 +196,15 @@ class PunchesRelationManager extends RelationManager
                             return;
                         }
 
-                        $employee->forceFill(['barcode' => $barcode])->saveQuietly();
-
-                        $result = app(SyncPipeline::class)->syncEmployeeRetroactively($employee);
+                        $employee->barcode = $barcode;
+                        $backfilled = app(DeviceSyncService::class)->backfillForEmployee($employee);
+                        $employee->save();
 
                         Notification::make()
                             ->success()
                             ->title(__('biometric-attendance::filament/resources/device/relation-managers/punches.actions.assign.assigned', [
-                                'name'    => $employee->name,
-                                'count'   => $result['backfilled'],
+                                'name'  => $employee->name,
+                                'count' => $backfilled,
                             ]))
                             ->send();
                     }),

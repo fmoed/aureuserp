@@ -64,7 +64,6 @@ class DevicesTable
             ->label(__('biometric-attendance::filament/resources/device.table.actions.test-connection.label'))
             ->icon('heroicon-o-signal')
             ->color('info')
-            ->visible(fn (Device $record): bool => DeviceResource::canEdit($record))
             ->authorize(fn (Device $record): bool => DeviceResource::canEdit($record))
             ->action(function (Device $record): void {
                 static::probeConnection($record);
@@ -77,7 +76,6 @@ class DevicesTable
             ->label(__('biometric-attendance::filament/resources/device.table.actions.sync-now.label'))
             ->icon('heroicon-o-arrow-down-tray')
             ->color('success')
-            ->visible(fn (Device $record): bool => DeviceResource::canEdit($record))
             ->authorize(fn (Device $record): bool => DeviceResource::canEdit($record))
             ->action(function (Device $record): void {
                 try {
