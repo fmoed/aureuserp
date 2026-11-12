@@ -14,14 +14,46 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
 use Webkul\Attendance\Filament\Exports\AttendanceExporter;
 use Webkul\Attendance\Models\Attendance;
+use Webkul\Attendance\Policies\AttendancePolicy;
 
 class AttendancesTable
 {
+    /**
+     * @var array<string, string>|null
+     */
+    protected static ?array $cachedSources = null;
+
+    public static function flushRuntimeCache(): void
+    {
+        static::$cachedSources = null;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public static function sourceOptions(): array
+    {
+        if (static::$cachedSources !== null) {
+            return static::$cachedSources;
+        }
+
+        return static::$cachedSources = AttendancePolicy::scopeQuery(Attendance::query())
+            ->select('source')
+            ->selectRaw('MAX(source_label) AS source_label')
+            ->groupBy('source')
+            ->get()
+            ->mapWithKeys(fn (Attendance $row) => [
+                $row->source => Attendance::sourceDisplayName($row->source, $row->source_label),
+            ])
+            ->all();
+    }
+
     /**
      * Stored values are naive UTC strings; always read the raw attribute so
      * the app timezone never leaks in (Carbon::parse(Carbon, 'UTC') would
@@ -44,7 +76,7 @@ class AttendancesTable
     {
         return $table
             ->defaultSort('work_date', 'desc')
-            ->modifyQueryUsing(fn ($query) => $query->with('employee'))
+            ->modifyQueryUsing(fn (Builder $query): Builder => AttendancePolicy::scopeQuery($query)->with('employee'))
             ->columns([
                 TextColumn::make('employee.name')
                     ->label(__('attendance::filament/resources/attendance.table.columns.employee'))
@@ -84,20 +116,15 @@ class AttendancesTable
             ->filters([
                 SelectFilter::make('employee_id')
                     ->label(__('attendance::filament/resources/attendance.table.filters.employee'))
-                    ->relationship('employee', 'name')
-                    ->searchable()
-                    ->preload(),
+                    ->relationship(
+                        'employee',
+                        'name',
+                        modifyQueryUsing: fn (Builder $query): Builder => AttendancePolicy::scopeEmployeeQuery($query),
+                    )
+                    ->searchable(),
                 SelectFilter::make('source')
                     ->label(__('attendance::filament/resources/attendance.table.filters.source'))
-                    ->options(fn (): array => Attendance::query()
-                        ->select('source')
-                        ->selectRaw('MAX(source_label) AS source_label')
-                        ->groupBy('source')
-                        ->get()
-                        ->mapWithKeys(fn (Attendance $row) => [
-                            $row->source => Attendance::sourceDisplayName($row->source, $row->source_label),
-                        ])
-                        ->all()),
+                    ->options(fn (): array => static::sourceOptions()),
                 Filter::make('work_date')
                     ->label(__('attendance::filament/resources/attendance.table.filters.work-date'))
                     ->form([

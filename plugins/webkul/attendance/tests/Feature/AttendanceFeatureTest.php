@@ -26,6 +26,7 @@ use Webkul\Support\Enums\NavigationGroup;
 beforeEach(function () {
     TestBootstrapHelper::ensurePluginInstalled('attendance');
 
+    AttendancesTable::flushRuntimeCache();
     WriterRegistry::flush();
     WriterRegistry::register('biometric-attendance');
     WriterRegistry::register('remote');
@@ -1004,4 +1005,54 @@ it('saves an untouched edit without drifting the stored times', function () {
     $attendance->refresh();
 
     expect([$attendance->getRawOriginal('check_in'), $attendance->getRawOriginal('check_out')])->toBe($rawBefore);
+});
+
+it('enforces company and ownership scope on view policy and table queries', function () {
+    $companyA = CompanyHelper::company();
+    $companyB = CompanyHelper::company();
+
+    [$ownEmployee, $peerEmployee, $foreignEmployee] = CompanyHelper::withoutCompanyContext(fn () => [
+        Employee::factory()->create(['user_id' => User::factory(), 'company_id' => $companyA->id]),
+        Employee::factory()->create(['user_id' => User::factory(), 'company_id' => $companyA->id]),
+        Employee::factory()->create(['user_id' => User::factory(), 'company_id' => $companyB->id]),
+    ]);
+
+    $ownRow = Attendance::withoutGlobalScopes()->create([
+        'employee_id' => $ownEmployee->id,
+        'work_date'   => '2026-09-24',
+        'check_in'    => '2026-09-24 08:00:00',
+        'source'      => 'biometric-attendance:1',
+        'company_id'  => $companyA->id,
+    ]);
+
+    $peerRow = Attendance::withoutGlobalScopes()->create([
+        'employee_id' => $peerEmployee->id,
+        'work_date'   => '2026-09-24',
+        'check_in'    => '2026-09-24 08:00:00',
+        'source'      => 'biometric-attendance:1',
+        'company_id'  => $companyA->id,
+    ]);
+
+    $foreignRow = Attendance::withoutGlobalScopes()->create([
+        'employee_id' => $foreignEmployee->id,
+        'work_date'   => '2026-09-24',
+        'check_in'    => '2026-09-24 08:00:00',
+        'source'      => 'biometric-attendance:1',
+        'company_id'  => $companyB->id,
+    ]);
+
+    $user = CompanyHelper::actingAsCompanyUser($companyA, [
+        'view_any_attendance_attendance',
+        'view_attendance_attendance',
+    ]);
+    $ownEmployee->forceFill(['user_id' => $user->id])->saveQuietly();
+    $user->forceFill(['resource_permission' => PermissionType::INDIVIDUAL])->saveQuietly();
+
+    expect($user->can('view', $ownRow->refresh()))->toBeTrue()
+        ->and($user->can('view', $peerRow))->toBeFalse()
+        ->and($user->can('view', $foreignRow))->toBeFalse();
+
+    Livewire::test(ListAttendances::class)
+        ->assertCanSeeTableRecords([$ownRow])
+        ->assertCanNotSeeTableRecords([$peerRow, $foreignRow]);
 });

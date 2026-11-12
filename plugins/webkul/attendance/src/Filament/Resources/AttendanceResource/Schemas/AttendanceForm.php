@@ -5,30 +5,40 @@ namespace Webkul\Attendance\Filament\Resources\AttendanceResource\Schemas;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\Hidden;
-use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
+use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 use Webkul\Attendance\Models\Attendance;
+use Webkul\Attendance\Policies\AttendancePolicy;
 use Webkul\Employee\Models\Employee;
 
 class AttendanceForm
 {
     /**
+     * @var array<int, string>
+     */
+    protected static array $timezoneCache = [];
+
+    /**
      * Time zone the manual wall-clock values are interpreted in:
-     * the employee's own zone, app timezone fallback.
+     * the employee's own zone, app timezone fallback. Memoized because the
+     * live form asks for it on every check-in/check-out keystroke.
      */
     public static function employeeTimezone(?int $employeeId): string
     {
         if ($employeeId) {
+            if (array_key_exists($employeeId, static::$timezoneCache)) {
+                return static::$timezoneCache[$employeeId];
+            }
+
             $timezone = Employee::query()->whereKey($employeeId)->value('time_zone');
 
-            if ($timezone) {
-                return $timezone;
-            }
+            return static::$timezoneCache[$employeeId] = $timezone ?: config('app.timezone');
         }
 
         return config('app.timezone');
@@ -59,9 +69,12 @@ class AttendanceForm
             ->components([
                 Select::make('employee_id')
                     ->label(__('attendance::filament/resources/attendance.form.employee'))
-                    ->relationship('employee', 'name')
+                    ->relationship(
+                        'employee',
+                        'name',
+                        modifyQueryUsing: fn (Builder $query): Builder => AttendancePolicy::scopeEmployeeQuery($query),
+                    )
                     ->searchable()
-                    ->preload()
                     ->required()
                     ->live()
                     ->disabledOn('edit')
@@ -152,9 +165,9 @@ class AttendanceForm
                             'hours' => round($minutes / 60, 1),
                         ]);
                     }),
-                Placeholder::make('source_label')
+                TextEntry::make('source_label')
                     ->label(__('attendance::filament/resources/attendance.form.source'))
-                    ->content(fn (Get $get, ?Model $record): string => Attendance::sourceDisplayName(
+                    ->state(fn (Get $get, ?Model $record): string => Attendance::sourceDisplayName(
                         $record?->source ?? $get('source'),
                         $record?->source_label,
                     )),

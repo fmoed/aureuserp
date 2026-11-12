@@ -6,6 +6,7 @@ use Closure;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Webkul\Attendance\Models\Attendance;
 use Webkul\Attendance\Models\AttendanceEvent;
@@ -68,6 +69,117 @@ class EventPairingService
                 'rows'   => $this->reconcile($employee, $rows, $this->sessionize($events)),
             ];
         });
+    }
+
+    /**
+     * Re-evaluate automatic rows in a date range from their raw events.
+     * Manual rows are never touched.
+     *
+     * @return array{rows: int}
+     */
+    public function rebuildForRange(Employee $employee, string $writer, Carbon $from, Carbon $to): array
+    {
+        return DB::transaction(function () use ($employee, $writer, $from, $to): array {
+            $fromDate = $from->copy()->startOfDay()->toDateString();
+            $toDate = $to->copy()->endOfDay()->toDateString();
+
+            $rows = Attendance::query()
+                ->withoutGlobalScope(CompanyScope::class)
+                ->where('employee_id', $employee->getKey())
+                ->where('source', '!=', Attendance::SOURCE_MANUAL)
+                ->where(fn (Builder $query) => $query
+                    ->where('source', $writer)
+                    ->orWhere('source', 'like', $writer.':%'))
+                ->whereDate('work_date', '>=', $fromDate)
+                ->whereDate('work_date', '<=', $toDate)
+                ->get();
+
+            $rowIds = $rows->modelKeys();
+
+            if ($rowIds !== []) {
+                AttendanceEvent::query()
+                    ->withoutGlobalScope(CompanyScope::class)
+                    ->whereIn('attendance_id', $rowIds)
+                    ->update(['attendance_id' => null]);
+            }
+
+            $rebuiltIds = $this->rebuild($employee, $writer)['rows'];
+
+            $rows->whereNotIn('id', $rebuiltIds)->each(fn (Attendance $row): ?bool => $row->delete());
+
+            return ['rows' => count($rebuiltIds)];
+        });
+    }
+
+    /**
+     * Pair all pending (unlinked) attendance events across every employee and writer.
+     *
+     * @return array{locked: bool, processed: int, rows: int, open: int}
+     */
+    public function processPending(): array
+    {
+        $lock = Cache::lock('attendance:process-events', 600);
+
+        if (! $lock->get()) {
+            return ['locked' => true, 'processed' => 0, 'rows' => 0, 'open' => 0];
+        }
+
+        try {
+            $groups = AttendanceEvent::query()
+                ->withoutGlobalScope(CompanyScope::class)
+                ->whereNull('attendance_id')
+                ->select(['employee_id', 'source'])
+                ->distinct()
+                ->get()
+                ->map(fn (AttendanceEvent $event): array => [
+                    'employee_id' => $event->employee_id,
+                    'writer'      => Attendance::sourceWriter($event->source),
+                ])
+                ->filter(fn (array $group): bool => $group['writer'] !== null)
+                ->unique(fn (array $group): string => $group['employee_id'].'|'.$group['writer']);
+
+            $employees = Employee::query()
+                ->withoutGlobalScope(CompanyScope::class)
+                ->whereKey($groups->pluck('employee_id')->unique()->all())
+                ->get()
+                ->keyBy('id');
+
+            $processed = 0;
+            $rowIds = [];
+
+            foreach ($groups as $group) {
+                $employee = $employees->get($group['employee_id']);
+
+                if (! $employee) {
+                    continue;
+                }
+
+                $result = $this->rebuild($employee, $group['writer']);
+
+                $processed += $result['events'];
+
+                foreach ($result['rows'] as $rowId) {
+                    $rowIds[$rowId] = true;
+                }
+            }
+
+            $open = $rowIds === []
+                ? 0
+                : Attendance::query()
+                    ->withoutGlobalScope(CompanyScope::class)
+                    ->whereKey(array_keys($rowIds))
+                    ->whereNull('check_out')
+                    ->count();
+
+            return [
+                'locked'    => false,
+                'processed' => $processed,
+                'rows'      => count($rowIds),
+                'open'      => $open,
+            ];
+        } finally {
+            $lock->release();
+        }
     }
 
     /**
@@ -170,6 +282,9 @@ class EventPairingService
         return AttendanceEvent::query()
             ->withoutGlobalScope(CompanyScope::class)
             ->where('employee_id', $employee->getKey())
+            ->where(fn (Builder $query) => $query
+                ->where('source', $writer)
+                ->orWhere('source', 'like', $writer.':%'))
             ->tap($constraint)
             ->orderBy('punched_at')
             ->orderBy('id')
@@ -188,6 +303,9 @@ class EventPairingService
             ->withoutGlobalScope(CompanyScope::class)
             ->where('employee_id', $employee->getKey())
             ->where('source', '!=', Attendance::SOURCE_MANUAL)
+            ->where(fn (Builder $query) => $query
+                ->where('source', $writer)
+                ->orWhere('source', 'like', $writer.':%'))
             ->tap($constraint)
             ->orderBy('check_in')
             ->orderBy('id')

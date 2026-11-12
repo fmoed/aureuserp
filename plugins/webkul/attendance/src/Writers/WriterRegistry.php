@@ -25,6 +25,14 @@ class WriterRegistry
      */
     protected static array $writers = [];
 
+    /**
+     * Per-request label memoization: tables and exporters resolve the same
+     * writer reference on every row, and each resolution may hit the DB.
+     *
+     * @var array<string, ?string>
+     */
+    protected static array $resolvedLabels = [];
+
     public static function register(string $slug, ?callable $labelResolver = null): void
     {
         $slug = strtolower($slug);
@@ -34,11 +42,13 @@ class WriterRegistry
         }
 
         static::$writers[$slug] = $labelResolver;
+        static::$resolvedLabels = [];
     }
 
     public static function flush(): void
     {
         static::$writers = [];
+        static::$resolvedLabels = [];
     }
 
     public static function isRegistered(string $slug): bool
@@ -48,13 +58,20 @@ class WriterRegistry
 
     public static function resolveLabel(string $slug, ?int $referenceId = null): ?string
     {
-        $resolver = static::$writers[strtolower($slug)] ?? null;
+        $slug = strtolower($slug);
+        $resolver = static::$writers[$slug] ?? null;
 
         if ($resolver === null) {
             return null;
         }
 
-        return $resolver($referenceId);
+        $cacheKey = $slug.':'.($referenceId ?? 'null');
+
+        if (array_key_exists($cacheKey, static::$resolvedLabels)) {
+            return static::$resolvedLabels[$cacheKey];
+        }
+
+        return static::$resolvedLabels[$cacheKey] = $resolver($referenceId);
     }
 
     /**
