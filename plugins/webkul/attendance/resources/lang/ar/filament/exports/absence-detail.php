@@ -12,6 +12,7 @@ return [
         'scheduled-minutes'     => 'الساعات المجدولة',
         'worked-minutes'        => 'الساعات الفعلية',
         'overtime-minutes'      => 'ساعات إضافية',
+        'shortfall-minutes'     => 'ساعات النقص',
         'break-minutes'         => 'ساعات الاستراحة',
         'late-minutes'          => 'دقائق التأخير',
         'early-leave-minutes'   => 'دقائق الانصراف المبكر',

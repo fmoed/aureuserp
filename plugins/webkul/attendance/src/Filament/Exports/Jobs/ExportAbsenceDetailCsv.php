@@ -72,6 +72,7 @@ class ExportAbsenceDetailCsv extends ExportCsv
                     AttendanceRegisterTable::formatMinutesToHours((int) ($totals['scheduled_minutes'] ?? 0)),
                     $hoursStr,
                     AttendanceRegisterTable::formatMinutesToHours((int) ($totals['overtime_minutes'] ?? 0)),
+                    AttendanceRegisterTable::formatMinutesToHours((int) ($totals['shortfall_minutes'] ?? 0)),
                     (string) (int) ($totals['late_minutes'] ?? 0),
                     (string) (int) ($totals['early_leave_minutes'] ?? 0),
                     AttendanceRegisterTable::formatMinutesToHours((int) ($totals['variance_minutes'] ?? 0), true),

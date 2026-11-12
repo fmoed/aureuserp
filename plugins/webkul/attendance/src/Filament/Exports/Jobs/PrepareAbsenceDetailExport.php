@@ -43,6 +43,7 @@ class PrepareAbsenceDetailExport extends PrepareCsvExport
             __('attendance::filament/exports/absence-detail.columns.scheduled-minutes'),
             __('attendance::filament/exports/absence-detail.columns.worked-minutes'),
             __('attendance::filament/exports/absence-detail.columns.overtime-minutes'),
+            __('attendance::filament/exports/absence-detail.columns.shortfall-minutes'),
             __('attendance::filament/exports/absence-detail.columns.late-minutes'),
             __('attendance::filament/exports/absence-detail.columns.early-leave-minutes'),
             __('attendance::filament/exports/absence-detail.columns.variance-minutes'),

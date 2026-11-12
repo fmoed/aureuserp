@@ -594,10 +594,12 @@ class AttendanceOverviewService
                     'scheduled_minutes'   => $entry['scheduled_minutes'] ?? null,
                     'break_minutes'       => $entry['break_minutes'] ?? null,
                     'overtime_minutes'    => $entry['overtime_minutes'] ?? null,
+                    'shortfall_minutes'   => $entry['shortfall_minutes'] ?? null,
                     'late_minutes'        => $entry['late_minutes'] ?? null,
                     'early_leave_minutes' => $entry['early_leave_minutes'] ?? null,
                     'variance_minutes'    => $entry['variance_minutes'] ?? null,
                     'is_estimated'        => $entry['is_estimated'] ?? false,
+                    'in_progress'         => (bool) ($entry['in_progress'] ?? false),
                     'leave_label'         => $entry['leave_label'],
                 ],
             ])->all();
@@ -692,6 +694,7 @@ class AttendanceOverviewService
                 'scheduled_minutes'     => 0,
                 'regular_minutes'       => 0,
                 'overtime_minutes'      => 0,
+                'shortfall_minutes'     => 0,
                 'break_minutes'         => 0,
                 'late_minutes'          => 0,
                 'late_count'            => 0,
@@ -740,6 +743,7 @@ class AttendanceOverviewService
                         'scheduled_minutes',
                         'regular_minutes',
                         'overtime_minutes',
+                        'shortfall_minutes',
                         'break_minutes',
                         'late_minutes',
                         'late_count',
@@ -921,9 +925,12 @@ class AttendanceOverviewService
             ? (int) round($value)
             : round($value, 1);
 
+        $inProgress = $entries->where('in_progress', true)->count();
+        $entries = $entries->reject(fn (array $entry): bool => (bool) ($entry['in_progress'] ?? false));
+
         $present = $weight($entries->sum(fn (array $entry): float => (float) ($entry['present_weight'] ?? 0)));
         $onLeave = $weight($entries->sum(fn (array $entry): float => (float) ($entry['leave_weight'] ?? 0)));
-        $holidays = $entries->where('status', self::STATUS_HOLIDAY)->count();
+        $holidays = $entries->whereIn('status', [self::STATUS_HOLIDAY, self::STATUS_HOLIDAY_PRESENT])->count();
         $pending = $entries->where('status', self::STATUS_ON_LEAVE_PENDING)->count();
         $missingCheckouts = $entries->where('status', self::STATUS_MISSING_CHECKOUT)->count();
         $weekendPresent = $entries->where('status', self::STATUS_WEEKEND_PRESENT)->count();
@@ -945,7 +952,7 @@ class AttendanceOverviewService
 
         $workdays = $weight(max(
             0.0,
-            $entries->count() - $holidays - $onLeaveForDenominator - $weekendPresent - $holidayPresent,
+            $entries->count() - $holidays - $onLeaveForDenominator - $weekendPresent,
         ));
 
         $scheduled = (int) $entries->sum(fn (array $entry): int => (int) ($entry['scheduled_minutes'] ?? 0));
@@ -984,6 +991,7 @@ class AttendanceOverviewService
             'minutes'               => (int) $entries->sum(fn (array $entry): int => (int) ($entry['minutes'] ?? 0)),
             'regular_minutes'       => $regular,
             'overtime_minutes'      => (int) $entries->sum(fn (array $entry): int => (int) ($entry['overtime_minutes'] ?? 0)),
+            'shortfall_minutes'     => (int) $entries->sum(fn (array $entry): int => (int) ($entry['shortfall_minutes'] ?? 0)),
             'break_minutes'         => (int) $entries->sum(fn (array $entry): int => (int) ($entry['break_minutes'] ?? 0)),
             'late_minutes'          => (int) $entries->sum(fn (array $entry): int => (int) ($entry['late_minutes'] ?? 0)),
             'late_count'            => (int) $entries->sum(fn (array $entry): int => (int) ($entry['late_count'] ?? 0)),
@@ -1066,6 +1074,7 @@ class AttendanceOverviewService
 
             if (! array_key_exists($key, $this->calendarCache)) {
                 $this->calendarCache[$key] = Calendar::query()
+                    ->with('attendance')
                     ->where('company_id', $employee->company_id)
                     ->where('is_active', true)
                     ->whereHas('attendance')
@@ -1080,6 +1089,7 @@ class AttendanceOverviewService
 
         if (! array_key_exists('global', $this->calendarCache)) {
             $this->calendarCache['global'] = Calendar::query()
+                ->with('attendance')
                 ->whereNull('company_id')
                 ->where('is_active', true)
                 ->whereHas('attendance')
@@ -1093,9 +1103,38 @@ class AttendanceOverviewService
 
         return $employee->calendar
             ?? ($employee->company_id !== null
-                ? Calendar::query()->where('company_id', $employee->company_id)->where('is_active', true)->orderBy('id')->first()
+                ? Calendar::query()->with('attendance')->where('company_id', $employee->company_id)->where('is_active', true)->orderBy('id')->first()
                 : null)
-            ?? Calendar::query()->whereNull('company_id')->where('is_active', true)->orderBy('id')->first();
+            ?? Calendar::query()->with('attendance')->whereNull('company_id')->where('is_active', true)->orderBy('id')->first();
+    }
+
+    /**
+     * @var array<string, int>
+     */
+    private array $effectiveScheduledCache = [];
+
+    public function flushEffectiveScheduledCache(): void
+    {
+        $this->effectiveScheduledCache = [];
+    }
+
+    public function effectiveScheduledMinutesForDay(Employee $employee, string $workDate): int
+    {
+        $key = $employee->getKey().'|'.$workDate;
+
+        if (array_key_exists($key, $this->effectiveScheduledCache)) {
+            return $this->effectiveScheduledCache[$key];
+        }
+
+        $dateObj = Carbon::parse($workDate);
+        $monthStart = $dateObj->copy()->startOfMonth();
+        $monthEnd = $dateObj->copy()->endOfMonth();
+
+        foreach ($this->daily(collect([$employee]), $monthStart, $monthEnd) as $entry) {
+            $this->effectiveScheduledCache[$employee->getKey().'|'.$entry['date']] = (int) ($entry['scheduled_minutes'] ?? 0);
+        }
+
+        return $this->effectiveScheduledCache[$key] ??= 0;
     }
 
     protected function calendarHasAttendance(Calendar $calendar): bool
@@ -1370,7 +1409,7 @@ class AttendanceOverviewService
 
         $leaveLabel = $leave?->holidayStatus?->name;
 
-        if ($day['status'] === self::STATUS_HOLIDAY && $holiday !== null) {
+        if (in_array($day['status'], [self::STATUS_HOLIDAY, self::STATUS_HOLIDAY_PRESENT], true) && $holiday !== null) {
             $leaveLabel = $holiday['name'];
         }
 

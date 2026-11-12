@@ -6,10 +6,18 @@ return [
         'work-date' => 'تاريخ العمل',
         'check-in'  => 'الحضور',
         'check-out' => 'الانصراف',
-        'worked'    => 'المدة',
+        'scheduled' => 'الساعات المطلوبة',
+        'worked'    => 'الساعات الفعلية',
+        'remaining' => 'الساعات الناقصة',
         'break'     => 'استراحة',
         'estimated' => 'مقدّر',
         'source'    => 'المصدر',
+    ],
+
+    'summary' => [
+        'total-for'         => 'الإجمالي — :employee',
+        'days-count'        => ':count أيام',
+        'missing-checkouts' => ':count بدون انصراف',
     ],
 
     'notification' => [

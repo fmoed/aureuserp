@@ -14,6 +14,7 @@ return [
         'scheduled-hours'      => 'Scheduled Hours',
         'regular-hours'        => 'Regular Hours',
         'overtime-hours'       => 'Overtime Hours',
+        'shortfall-hours'      => 'Shortfall Hours',
         'break-hours'          => 'Break Hours',
         'late-minutes'         => 'Late Minutes',
         'early-leave-minutes'  => 'Early Leave Minutes',

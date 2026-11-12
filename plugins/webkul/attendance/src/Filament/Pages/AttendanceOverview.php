@@ -10,6 +10,8 @@ use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Concerns\InteractsWithForms;
 use Filament\Forms\Contracts\HasForms;
+use Filament\Infolists\Components\RepeatableEntry;
+use Filament\Infolists\Components\RepeatableEntry\TableColumn;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Pages\Page;
 use Filament\Panel;
@@ -47,7 +49,6 @@ use Webkul\Attendance\Settings\AttendanceSettings;
 use Webkul\Employee\Models\Department;
 use Webkul\Employee\Models\Employee;
 use Webkul\Support\Enums\NavigationGroup;
-use Webkul\Support\Filament\Infolists\Components\RepeatableEntry;
 use Webkul\Support\Models\Calendar;
 
 /**
@@ -1077,7 +1078,7 @@ class AttendanceOverview extends Page implements HasForms, HasTable
         return Action::make('inspectDayCell')
             ->label(__('attendance::filament/pages/overview.inspect.action_label'))
             ->slideOver()
-            ->modalWidth(Width::FourExtraLarge)
+            ->modalWidth(Width::TwoExtraLarge)
             ->modalHeading(function (array $arguments): string {
                 $employee = Employee::query()->find($arguments['employee_id'] ?? null);
                 $date = $arguments['date'] ?? null;
@@ -1085,7 +1086,6 @@ class AttendanceOverview extends Page implements HasForms, HasTable
 
                 return $employee ? "{$employee->name} — {$formattedDate}" : __('attendance::filament/pages/overview.inspect.heading');
             })
-            ->modalDescription(__('attendance::filament/pages/overview.inspect.description'))
             ->modalSubmitAction(false)
             ->modalCancelActionLabel(__('attendance::filament/pages/overview.inspect.close'))
             ->authorize(function (array $arguments): bool {
@@ -1152,92 +1152,98 @@ class AttendanceOverview extends Page implements HasForms, HasTable
             ->orderBy('punched_at')
             ->get();
 
+        $attendances->each(fn (Attendance $rec) => $rec->setRelation('employee', $employee));
+        $events->each(fn (AttendanceEvent $ev) => $ev->setRelation('employee', $employee));
+
         $firstRec = $attendances->first();
         $lastRec = $attendances->last();
-        $firstIn = $firstRec
-            ? (AttendancesTable::employeeWallClock($firstRec, 'check_in')?->format('H:i') ?? '—')
-            : '—';
-        $lastOut = $lastRec
-            ? ($lastRec->check_out !== null
+        $sessionTimeRange = null;
+
+        if ($firstRec) {
+            $inStr = AttendancesTable::employeeWallClock($firstRec, 'check_in')?->format('H:i') ?? '—';
+            $outStr = $lastRec && $lastRec->check_out !== null
                 ? (AttendancesTable::employeeWallClock($lastRec, 'check_out')?->format('H:i') ?? '—')
                     .(AttendancesTable::crossesMidnight($lastRec) ? ' (+1d)' : '')
-                : __('attendance::filament/pages/overview.inspect.missing_checkout'))
-            : '—';
+                : (($meta['in_progress'] ?? false)
+                    ? __('attendance::filament/pages/overview.statuses.present')
+                    : __('attendance::filament/pages/overview.inspect.missing_checkout'));
+            $sessionTimeRange = "{$inStr} → {$outStr}";
+        }
+
+        $statusLabel = AttendanceRegisterTable::statusLabel($cellStatus);
+        if (! empty($meta['leave_label'])) {
+            $statusLabel .= ' — '.$meta['leave_label'];
+        }
+
+        $lateMinutes = (int) ($meta['late_minutes'] ?? 0);
+        $earlyLeaveMinutes = (int) ($meta['early_leave_minutes'] ?? 0);
+        $shortfallMinutes = (int) ($meta['shortfall_minutes'] ?? 0);
+        $overtimeMinutes = (int) ($meta['overtime_minutes'] ?? 0);
+        $breakMinutes = (int) ($meta['break_minutes'] ?? 0);
 
         return [
             Section::make(__('attendance::filament/pages/overview.inspect.evaluation_title'))
+                ->compact()
                 ->schema([
-                    Grid::make(4)
+                    Grid::make(['default' => 2, 'sm' => 3])
                         ->schema([
                             TextEntry::make('status')
                                 ->label(__('attendance::filament/pages/overview.inspect.status'))
-                                ->state(AttendanceRegisterTable::statusLabel($cellStatus))
+                                ->state($statusLabel)
                                 ->badge()
                                 ->color(AttendanceRegisterTable::statusColor($cellStatus)),
-                            TextEntry::make('shift')
-                                ->label(__('attendance::filament/pages/overview.inspect.shift'))
-                                ->state($calendar?->name ?? __('attendance::filament/pages/overview.inspect.no_shift')),
                             TextEntry::make('worked_hours')
                                 ->label(__('attendance::filament/pages/overview.inspect.worked_hours'))
-                                ->state("{$workedHours} / {$scheduledHours}"),
-                            TextEntry::make('times')
+                                ->state("\u{200E}{$workedHours} / {$scheduledHours}")
+                                ->badge()
+                                ->color('gray'),
+                            TextEntry::make('session_times')
                                 ->label(__('attendance::filament/pages/overview.inspect.first_in_last_out'))
-                                ->state("{$firstIn} → {$lastOut}"),
-                        ]),
-                    Grid::make(4)
-                        ->schema([
+                                ->state($sessionTimeRange !== null ? "\u{200E}{$sessionTimeRange}" : null)
+                                ->badge()
+                                ->color('gray')
+                                ->visible($sessionTimeRange !== null),
+                            TextEntry::make('shift')
+                                ->label(__('attendance::filament/pages/overview.inspect.shift'))
+                                ->state($calendar?->name ?? __('attendance::filament/pages/overview.inspect.no_shift'))
+                                ->badge()
+                                ->color('gray')
+                                ->extraEntryWrapperAttributes(['class' => 'hidden sm:block']),
+                            TextEntry::make('shortfall')
+                                ->label(__('attendance::filament/pages/overview.table.columns.shortfall-hours'))
+                                ->state(AttendanceRegisterTable::formatMinutesToHours($shortfallMinutes))
+                                ->badge()
+                                ->color('danger')
+                                ->visible($shortfallMinutes > 0),
                             TextEntry::make('late')
                                 ->label(__('attendance::filament/pages/overview.inspect.late_minutes'))
-                                ->state(((int) ($meta['late_minutes'] ?? 0)).' min'),
+                                ->state(AttendanceRegisterTable::formatMinutesToHours($lateMinutes))
+                                ->badge()
+                                ->color('danger')
+                                ->visible($lateMinutes > 0),
                             TextEntry::make('early_leave')
                                 ->label(__('attendance::filament/pages/overview.inspect.early_leave_minutes'))
-                                ->state(((int) ($meta['early_leave_minutes'] ?? 0)).' min'),
+                                ->state(AttendanceRegisterTable::formatMinutesToHours($earlyLeaveMinutes))
+                                ->badge()
+                                ->color('warning')
+                                ->visible($earlyLeaveMinutes > 0),
                             TextEntry::make('overtime')
                                 ->label(__('attendance::filament/pages/overview.inspect.overtime_minutes'))
-                                ->state(((int) ($meta['overtime_minutes'] ?? 0)).' min'),
+                                ->state(AttendanceRegisterTable::formatMinutesToHours($overtimeMinutes))
+                                ->badge()
+                                ->color('success')
+                                ->visible($overtimeMinutes > 0),
                             TextEntry::make('break')
                                 ->label(__('attendance::filament/pages/overview.inspect.break_minutes'))
-                                ->state(((int) ($meta['break_minutes'] ?? 0)).' min'),
-                        ]),
-                ]),
-
-            Section::make(__('attendance::filament/pages/overview.inspect.sessions_title'))
-                ->schema([
-                    TextEntry::make('sessions_empty')
-                        ->hiddenLabel()
-                        ->state(__('attendance::filament/pages/overview.inspect.no_sessions'))
-                        ->color('gray')
-                        ->visible($attendances->isEmpty()),
-
-                    RepeatableEntry::make('attendances')
-                        ->hiddenLabel()
-                        ->state($attendances)
-                        ->visible($attendances->isNotEmpty())
-                        ->schema([
-                            Grid::make(4)
-                                ->schema([
-                                    TextEntry::make('check_in')
-                                        ->label(__('attendance::filament/resources/attendance.form.check-in'))
-                                        ->state(fn (Attendance $rec): string => AttendancesTable::employeeWallClock($rec, 'check_in')?->format('Y-m-d H:i:s') ?? '—'),
-                                    TextEntry::make('check_out')
-                                        ->label(__('attendance::filament/resources/attendance.form.check-out'))
-                                        ->state(fn (Attendance $rec): string => $rec->check_out !== null
-                                            ? (AttendancesTable::employeeWallClock($rec, 'check_out')?->format('Y-m-d H:i:s') ?? '—')
-                                                .(AttendancesTable::crossesMidnight($rec) ? ' (+1d)' : '')
-                                            : __('attendance::filament/pages/overview.inspect.missing_checkout'))
-                                        ->color(fn (Attendance $rec): ?string => $rec->check_out !== null ? null : 'danger'),
-                                    TextEntry::make('worked_minutes')
-                                        ->label(__('attendance::filament/pages/overview.inspect.duration'))
-                                        ->state(fn (Attendance $rec): string => $rec->worked_minutes !== null ? AttendanceRegisterTable::formatMinutesToHours((int) $rec->worked_minutes) : '—'),
-                                    TextEntry::make('source')
-                                        ->label(__('attendance::filament/resources/attendance.form.source'))
-                                        ->state(fn (Attendance $rec): string => Attendance::sourceDisplayName((string) $rec->source, $rec->source_label))
-                                        ->badge(),
-                                ]),
+                                ->state(AttendanceRegisterTable::formatMinutesToHours($breakMinutes))
+                                ->badge()
+                                ->color('gray')
+                                ->visible($breakMinutes > 0),
                         ]),
                 ]),
 
             Section::make(__('attendance::filament/pages/overview.inspect.raw_punches_title'))
+                ->compact()
                 ->schema([
                     TextEntry::make('punches_empty')
                         ->hiddenLabel()
@@ -1247,28 +1253,38 @@ class AttendanceOverview extends Page implements HasForms, HasTable
 
                     RepeatableEntry::make('raw_events')
                         ->hiddenLabel()
+                        ->extraAttributes(['class' => 'fi-inspect-punches'])
                         ->state($events)
                         ->visible($events->isNotEmpty())
+                        ->table([
+                            TableColumn::make(__('attendance::filament/resources/attendance-event.table.columns.punched-at')),
+                            TableColumn::make(__('attendance::filament/resources/attendance-event.table.columns.direction')),
+                            TableColumn::make(__('attendance::filament/resources/attendance-event.table.columns.source')),
+                            TableColumn::make(__('attendance::filament/pages/overview.inspect.status')),
+                        ])
                         ->schema([
-                            Grid::make(4)
-                                ->schema([
-                                    TextEntry::make('punched_at')
-                                        ->label(__('attendance::filament/resources/attendance-event.table.columns.punch-time'))
-                                        ->state(fn (AttendanceEvent $ev): string => AttendanceEventsTable::eventWallClock($ev)?->format('H:i:s') ?? '—'),
-                                    TextEntry::make('direction')
-                                        ->label(__('attendance::filament/resources/attendance-event.table.columns.direction'))
-                                        ->state(fn (AttendanceEvent $ev): string => AttendanceEvent::directionLabel((int) $ev->direction)),
-                                    TextEntry::make('source')
-                                        ->label(__('attendance::filament/resources/attendance-event.table.columns.source'))
-                                        ->state(fn (AttendanceEvent $ev): string => Attendance::sourceDisplayName((string) $ev->source, $ev->source_label)),
-                                    TextEntry::make('status')
-                                        ->label(__('attendance::filament/pages/overview.inspect.status'))
-                                        ->badge()
-                                        ->state(fn (AttendanceEvent $ev): string => $ev->attendance_id !== null
-                                            ? __('attendance::filament/pages/overview.inspect.paired')
-                                            : __('attendance::filament/pages/overview.inspect.unpaired'))
-                                        ->color(fn (AttendanceEvent $ev): string => $ev->attendance_id !== null ? 'success' : 'warning'),
-                                ]),
+                            TextEntry::make('punched_at')
+                                ->label(__('attendance::filament/resources/attendance-event.table.columns.punched-at'))
+                                ->state(fn (AttendanceEvent $ev): string => AttendanceEventsTable::eventWallClock($ev)?->format('H:i:s') ?? '—'),
+                            TextEntry::make('direction')
+                                ->label(__('attendance::filament/resources/attendance-event.table.columns.direction'))
+                                ->badge()
+                                ->state(fn (AttendanceEvent $ev): string => AttendanceEvent::directionLabel((int) $ev->direction))
+                                ->color(fn (AttendanceEvent $ev): string => match ((int) $ev->direction) {
+                                    AttendanceEvent::DIRECTION_IN  => 'success',
+                                    AttendanceEvent::DIRECTION_OUT => 'warning',
+                                    default                        => 'gray',
+                                }),
+                            TextEntry::make('source')
+                                ->label(__('attendance::filament/resources/attendance-event.table.columns.source'))
+                                ->state(fn (AttendanceEvent $ev): string => Attendance::sourceDisplayName((string) $ev->source, $ev->source_label)),
+                            TextEntry::make('status')
+                                ->label(__('attendance::filament/pages/overview.inspect.status'))
+                                ->badge()
+                                ->state(fn (AttendanceEvent $ev): string => $ev->attendance_id !== null
+                                    ? __('attendance::filament/pages/overview.inspect.paired')
+                                    : __('attendance::filament/pages/overview.inspect.unpaired'))
+                                ->color(fn (AttendanceEvent $ev): string => $ev->attendance_id !== null ? 'success' : 'warning'),
                         ]),
                 ]),
         ];
@@ -1290,7 +1306,7 @@ class AttendanceOverview extends Page implements HasForms, HasTable
         }
 
         $user = auth()->user();
-        $openAttendance = Attendance::query()
+        $openAttendance = AttendancePolicy::scopeQuery(Attendance::query())
             ->where('employee_id', $employeeId)
             ->where('work_date', $date)
             ->whereNull('check_out')
