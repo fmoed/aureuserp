@@ -22,13 +22,25 @@ class Punch extends Model
         'pushed_at',
     ];
 
-    protected $casts = [
-        'punch_time' => 'datetime',
-        'raw_state'  => 'integer',
-        'raw_type'   => 'integer',
-        'device_uid' => 'integer',
-        'pushed_at'  => 'datetime',
-    ];
+    protected function casts(): array
+    {
+        return [
+            'punch_time' => 'datetime',
+            'raw_state'  => 'integer',
+            'raw_type'   => 'integer',
+            'device_uid' => 'integer',
+            'pushed_at'  => 'datetime',
+        ];
+    }
+
+    protected static function booted(): void
+    {
+        static::updating(function (Punch $punch): void {
+            if ($punch->isDirty('employee_id') && $punch->getOriginal('employee_id') !== null) {
+                $punch->pushed_at = null;
+            }
+        });
+    }
 
     public function device(): BelongsTo
     {

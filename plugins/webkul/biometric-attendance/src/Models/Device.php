@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\Auth;
+use Webkul\BiometricAttendance\Enums\PunchDirectionMode;
 use Webkul\Security\Models\User;
 use Webkul\Support\Models\Company;
 use Webkul\Support\Models\Scopes\CompanyScope;
@@ -33,18 +34,34 @@ class Device extends Model
         'last_error',
     ];
 
-    protected $casts = [
-        'port'          => 'integer',
-        'comm_key'      => 'integer',
-        'is_active'     => 'boolean',
-        'last_sync_at'  => 'datetime',
-        'last_sync_uid' => 'integer',
+    protected $attributes = [
+        'port'                 => 4370,
+        'protocol'             => 'tcp',
+        'punch_direction_mode' => PunchDirectionMode::AutoToggle->value,
+        'is_active'            => true,
     ];
+
+    protected $hidden = [
+        'comm_key',
+    ];
+
+    protected function casts(): array
+    {
+        return [
+            'port'                 => 'integer',
+            'comm_key'             => 'encrypted',
+            'punch_direction_mode' => PunchDirectionMode::class,
+            'is_active'            => 'boolean',
+            'last_sync_at'         => 'datetime',
+            'last_sync_uid'        => 'integer',
+        ];
+    }
 
     protected static function booted(): void
     {
         static::creating(function (Device $device): void {
             $device->creator_id ??= Auth::id();
+            $device->comm_key ??= 0;
         });
     }
 

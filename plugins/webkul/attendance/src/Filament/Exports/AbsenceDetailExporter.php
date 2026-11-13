@@ -59,6 +59,8 @@ class AbsenceDetailExporter extends Exporter
                 ->label(__('attendance::filament/exports/absence-detail.columns.worked-minutes')),
             ExportColumn::make('overtime-minutes')
                 ->label(__('attendance::filament/exports/absence-detail.columns.overtime-minutes')),
+            ExportColumn::make('shortfall-minutes')
+                ->label(__('attendance::filament/exports/absence-detail.columns.shortfall-minutes')),
             ExportColumn::make('late-minutes')
                 ->label(__('attendance::filament/exports/absence-detail.columns.late-minutes')),
             ExportColumn::make('early-leave-minutes')

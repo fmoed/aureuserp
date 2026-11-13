@@ -24,7 +24,9 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
 use Webkul\Attendance\Filament\Exports\AttendanceExporter;
+use Webkul\Attendance\Filament\Exports\Jobs\PrepareAttendanceExport;
 use Webkul\Attendance\Filament\Resources\AttendanceResource;
+use Webkul\Attendance\Filament\Tables\AttendanceRegisterTable;
 use Webkul\Attendance\Models\Attendance;
 use Webkul\Attendance\Policies\AttendancePolicy;
 use Webkul\Attendance\Services\AttendanceOverviewService;
@@ -37,6 +39,66 @@ use Webkul\Support\Models\Calendar;
 class AttendancesTable
 {
     public const EXPORT_MAX_ROWS = 10000;
+
+    protected static ?AttendanceOverviewService $overviewService = null;
+
+    /**
+     * @var array<string, int>
+     */
+    protected static array $dayWorkedCache = [];
+
+    public static function flushRuntimeCache(): void
+    {
+        if (static::$overviewService !== null) {
+            static::$overviewService->flushEffectiveScheduledCache();
+        }
+        static::$overviewService = null;
+        static::$dayWorkedCache = [];
+    }
+
+    public static function scheduledMinutes(Attendance $record): int
+    {
+        if (! $record->employee || ! $record->work_date) {
+            return 0;
+        }
+
+        $workDate = $record->work_date instanceof Carbon
+            ? $record->work_date->toDateString()
+            : (string) $record->getRawOriginal('work_date');
+
+        $overview = static::$overviewService ??= app(AttendanceOverviewService::class);
+
+        return $overview->effectiveScheduledMinutesForDay($record->employee, $workDate);
+    }
+
+    public static function remainingMinutes(Attendance $record, ?int $dayWorkedMinutes = null): ?int
+    {
+        if ($record->check_out === null) {
+            return null;
+        }
+
+        $scheduled = static::scheduledMinutes($record);
+
+        if ($dayWorkedMinutes === null) {
+            $workDate = $record->work_date instanceof Carbon
+                ? $record->work_date->toDateString()
+                : (string) $record->getRawOriginal('work_date');
+            $cacheKey = $record->employee_id.'|'.$workDate;
+
+            if (! array_key_exists($cacheKey, static::$dayWorkedCache)) {
+                static::$dayWorkedCache[$cacheKey] = (int) AttendancePolicy::scopeQuery(Attendance::query())
+                    ->where('employee_id', $record->employee_id)
+                    ->whereDate('work_date', $workDate)
+                    ->whereNotNull('check_out')
+                    ->get(['id', 'check_in', 'check_out', 'break_minutes'])
+                    ->sum(fn (Attendance $row): int => (int) ($row->worked_minutes ?? 0));
+            }
+
+            $dayWorkedMinutes = static::$dayWorkedCache[$cacheKey];
+        }
+
+        return max(0, $scheduled - $dayWorkedMinutes);
+    }
 
     /**
      * Stored values are naive UTC strings; always read the raw attribute so
@@ -198,7 +260,7 @@ class AttendancesTable
             ->defaultSort('work_date', 'desc')
             ->defaultPaginationPageOption(25)
             ->paginated([10, 25, 50])
-            ->modifyQueryUsing(fn (Builder $query): Builder => AttendancePolicy::scopeQuery($query)->with('employee'))
+            ->modifyQueryUsing(fn (Builder $query): Builder => AttendancePolicy::scopeQuery($query)->with(['employee.calendar.attendance']))
             ->columns([
                 TextColumn::make('employee.name')
                     ->label(__('attendance::filament/resources/attendance.table.columns.employee'))
@@ -234,10 +296,22 @@ class AttendancesTable
                     ->badge()
                     ->color('warning')
                     ->placeholder(''),
+                TextColumn::make('scheduled_minutes')
+                    ->label(__('attendance::filament/resources/attendance.table.columns.scheduled'))
+                    ->state(fn (Attendance $record): int => static::scheduledMinutes($record))
+                    ->formatStateUsing(fn (int $state): string => AttendanceRegisterTable::formatMinutesToHours($state))
+                    ->alignCenter(),
                 TextColumn::make('worked_minutes')
                     ->label(__('attendance::filament/resources/attendance.table.columns.worked'))
-                    ->state(fn (Attendance $record) => $record->worked_minutes)
-                    ->formatStateUsing(fn ($state) => $state === null ? '—' : intdiv((int) $state, 60).'h '.((int) $state % 60).'m'),
+                    ->state(fn (Attendance $record): ?int => $record->worked_minutes)
+                    ->formatStateUsing(fn (?int $state): string => $state === null ? '—' : AttendanceRegisterTable::formatMinutesToHours((int) $state))
+                    ->alignCenter(),
+                TextColumn::make('remaining_minutes')
+                    ->label(__('attendance::filament/resources/attendance.table.columns.remaining'))
+                    ->state(fn (Attendance $record): ?int => static::remainingMinutes($record))
+                    ->formatStateUsing(fn (?int $state): string => $state === null ? '—' : AttendanceRegisterTable::formatMinutesToHours((int) $state))
+                    ->color(fn (?int $state): ?string => $state === null ? null : ($state > 0 ? 'danger' : 'success'))
+                    ->alignCenter(),
                 TextColumn::make('source')
                     ->label(__('attendance::filament/resources/attendance.table.columns.source'))
                     ->badge()
@@ -383,6 +457,7 @@ class AttendancesTable
                             ->label(__('attendance::filament/resources/attendance.table.toolbar-actions.export-selected'))
                             ->icon('heroicon-o-arrow-up-tray')
                             ->exporter(AttendanceExporter::class)
+                            ->job(PrepareAttendanceExport::class)
                             ->maxRows(self::EXPORT_MAX_ROWS)
                             ->visible(fn (): bool => AttendanceResource::canViewAny())
                             ->authorize(fn (): bool => AttendanceResource::canViewAny()),
@@ -426,6 +501,7 @@ class AttendancesTable
                         ->label(__('attendance::filament/resources/attendance.table.toolbar-actions.export'))
                         ->icon('heroicon-o-arrow-up-tray')
                         ->exporter(AttendanceExporter::class)
+                        ->job(PrepareAttendanceExport::class)
                         ->maxRows(self::EXPORT_MAX_ROWS)
                         ->visible(fn (): bool => AttendanceResource::canViewAny())
                         ->authorize(fn (): bool => AttendanceResource::canViewAny())

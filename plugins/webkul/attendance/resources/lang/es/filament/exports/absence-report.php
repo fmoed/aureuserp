@@ -14,6 +14,7 @@ return [
         'scheduled-hours'      => 'Horas programadas',
         'regular-hours'        => 'Horas regulares',
         'overtime-hours'       => 'Horas extra',
+        'shortfall-hours'      => 'Horas faltantes',
         'break-hours'          => 'Horas de descanso',
         'late-minutes'         => 'Minutos de retraso',
         'early-leave-minutes'  => 'Minutos de salida anticipada',

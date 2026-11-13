@@ -285,6 +285,26 @@
                 gap: 0.5rem;
             }
         }
+
+        body[data-inspect-handoff="1"] .fi-modal.fi-modal-slide-over > .fi-modal-window-ctn > .fi-modal-window,
+        body[data-inspect-handoff="1"] .fi-modal.fi-modal-slide-over > .fi-modal-close-overlay {
+            transition-duration: 0ms !important;
+            transform: translateX(0) !important;
+            opacity: 1 !important;
+        }
+
+        @media (max-width: 639.98px) {
+            .fi-in-table-repeatable.fi-inspect-punches > table > tbody > tr {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 0.75rem;
+                padding: 0.625rem 0.75rem;
+            }
+
+            .fi-in-table-repeatable.fi-inspect-punches > table > tbody > tr > td:nth-child(3),
+            .fi-in-table-repeatable.fi-inspect-punches > table > tbody > tr > td:nth-child(4) {
+                display: none;
+            }
+        }
     </style>
 
     {{-- Compact Responsive KPI Summary Strip (4 Balanced Cards) --}}
@@ -360,17 +380,21 @@
                     <span class="text-[11px] font-medium tabular-nums text-rose-600/80 dark:text-rose-400/80">
                         {{ $absenceRate }}%
                     </span>
-                    @if ($pendingCount > 0)
-                        <span class="rounded-md bg-amber-50 px-1 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">
-                            {{ $totalsByKey['pending']['label'] ?? __('attendance::filament/pages/overview.grid.totals.pending') }}: {{ number_format($pendingCount) }}
-                        </span>
-                    @endif
-                    @if ($hours['missing_checkouts'] > 0)
-                        <span class="rounded-md bg-amber-50 px-1 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">
-                            {{ __('attendance::filament/pages/overview.table.columns.missing-checkouts') }}: {{ number_format($hours['missing_checkouts']) }}
-                        </span>
-                    @endif
                 </div>
+                @if ($pendingCount > 0 || $hours['missing_checkouts'] > 0)
+                    <div class="mt-1 flex flex-wrap items-center gap-1">
+                        @if ($pendingCount > 0)
+                            <x-filament::badge color="warning" size="sm">
+                                {{ $totalsByKey['pending']['label'] ?? __('attendance::filament/pages/overview.grid.totals.pending') }}: {{ number_format($pendingCount) }}
+                            </x-filament::badge>
+                        @endif
+                        @if ($hours['missing_checkouts'] > 0)
+                            <x-filament::badge color="warning" size="sm">
+                                {{ __('attendance::filament/pages/overview.table.columns.missing-checkouts') }}: {{ number_format($hours['missing_checkouts']) }}
+                            </x-filament::badge>
+                        @endif
+                    </div>
+                @endif
             </div>
         </div>
 
@@ -390,12 +414,14 @@
                     <span class="text-xl font-bold tabular-nums text-sky-600 dark:text-sky-400 sm:text-2xl">
                         {{ number_format($leaveCount) }}
                     </span>
-                    @if ($holidaysCount > 0)
-                        <span class="rounded-md bg-indigo-50 px-1 py-0.5 text-[10px] font-medium text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300">
-                            {{ $totalsByKey['holidays']['label'] ?? __('attendance::filament/pages/overview.grid.totals.holidays') }}: {{ number_format($holidaysCount) }}
-                        </span>
-                    @endif
                 </div>
+                @if ($holidaysCount > 0)
+                    <div class="mt-1 flex flex-wrap items-center gap-1">
+                        <x-filament::badge color="info" size="sm">
+                            {{ $totalsByKey['holidays']['label'] ?? __('attendance::filament/pages/overview.grid.totals.holidays') }}: {{ number_format($holidaysCount) }}
+                        </x-filament::badge>
+                    </div>
+                @endif
             </div>
         </div>
     </div>
@@ -591,5 +617,65 @@
         </x-filament::tabs>
 
         {{ $this->table }}
+    </div>
+
+    {{-- Instant SlideOver Loading Shell on Day Cell Click --}}
+    <div
+        wire:ignore
+        x-data="{
+            inspectingDay: false,
+            fallbackTimer: null,
+            startInspect() {
+                this.inspectingDay = true;
+                document.body.dataset.inspectHandoff = '1';
+                clearTimeout(this.fallbackTimer);
+                this.fallbackTimer = setTimeout(() => this.finishInspect(), 8000);
+            },
+            finishInspect() {
+                clearTimeout(this.fallbackTimer);
+                if (! this.inspectingDay) {
+                    delete document.body.dataset.inspectHandoff;
+                    return;
+                }
+                requestAnimationFrame(() => {
+                    this.inspectingDay = false;
+                    setTimeout(() => {
+                        delete document.body.dataset.inspectHandoff;
+                    }, 50);
+                });
+            }
+        }"
+        x-on:inspect-day-loading.window="startInspect()"
+        x-on:x-modal-opened.window="finishInspect()"
+        x-on:keydown.escape.window="finishInspect()"
+    >
+        <div
+            x-cloak
+            x-show="inspectingDay"
+            class="fi-modal fi-modal-open fi-modal-slide-over fi-modal-slide-over-from-end"
+            role="dialog"
+            aria-modal="true"
+        >
+            <div class="fi-modal-close-overlay" x-on:click="finishInspect()"></div>
+
+            <div class="fi-modal-window-ctn">
+                <div class="fi-modal-window fi-width-2xl">
+                    <div class="fi-modal-header">
+                        <div class="flex items-center gap-3">
+                            <x-filament::loading-indicator class="h-5 w-5 text-primary-600 dark:text-primary-400" />
+                            <h2 class="fi-modal-heading">
+                                {{ __('attendance::filament/pages/overview.inspect.heading') }}
+                            </h2>
+                        </div>
+                    </div>
+
+                    <div class="fi-modal-content space-y-4">
+                        <div class="h-24 animate-pulse rounded-xl bg-gray-100 dark:bg-white/5"></div>
+                        <div class="h-32 animate-pulse rounded-xl bg-gray-100 dark:bg-white/5"></div>
+                        <div class="h-32 animate-pulse rounded-xl bg-gray-100 dark:bg-white/5"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 </x-filament-panels::page>

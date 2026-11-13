@@ -12,6 +12,7 @@ return [
         'scheduled-minutes'     => 'Heures planifiées',
         'worked-minutes'        => 'Heures travaillées',
         'overtime-minutes'      => 'Heures supplémentaires',
+        'shortfall-minutes'     => 'Heures manquantes',
         'break-minutes'         => 'Heures de pause',
         'late-minutes'          => 'Minutes de retard',
         'early-leave-minutes'   => 'Minutes de départ anticipé',

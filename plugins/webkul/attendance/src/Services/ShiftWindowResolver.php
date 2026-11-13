@@ -321,6 +321,8 @@ class ShiftWindowResolver
         $shiftStart = $windows[0]['shift_start'] ?? null;
         $shiftEnd = $windows[count($windows) - 1]['shift_end'] ?? null;
 
+        $isOffOrHoliday = $isHoliday || ! $isWorkday;
+
         $checkIn = $dayRows->map(fn (Attendance $row): ?string => $row->getRawOriginal('check_in'))->filter()->min();
         $checkOut = $dayRows->map(fn (Attendance $row): ?string => $row->getRawOriginal('check_out'))->filter()->max();
 
@@ -331,7 +333,7 @@ class ShiftWindowResolver
 
         foreach ($dayRows as $row) {
             if ($row->check_in && $row->check_out) {
-                $gross += max(0, (int) round($row->check_in->diffInMinutes($row->check_out)));
+                $gross += max(0, (int) floor($row->check_in->diffInMinutes($row->check_out)));
             }
         }
 
@@ -353,6 +355,11 @@ class ShiftWindowResolver
         $missingCheckout = $dayRows->isNotEmpty()
             && $dayRows->every(fn (Attendance $row): bool => $row->getRawOriginal('check_out') === null);
 
+        $nowLocal = Carbon::now($timezone);
+        $inProgress = $missingCheckout
+            && $workDate === $nowLocal->toDateString()
+            && ($shiftEnd === null || $nowLocal->lt($shiftEnd));
+
         $missingPolicy = $calendar?->missing_checkout_policy ?? AttendanceSettings::defaultMissingCheckoutPolicy();
 
         $policy = ($calendar?->early_arrival_policy !== null && $calendar->early_arrival_policy !== EarlyArrivalPolicy::ClampToSchedule)
@@ -370,7 +377,7 @@ class ShiftWindowResolver
         if ($firstIn && $lastOut && $lastOut->gte($firstIn)) {
             $countStart = $firstIn;
 
-            if ($shiftStart) {
+            if ($shiftStart && ! $isOffOrHoliday) {
                 $countStart = match ($policy) {
                     EarlyArrivalPolicy::ClampToSchedule      => $firstIn->lt($shiftStart) ? $shiftStart : $firstIn,
                     EarlyArrivalPolicy::OffsetEarlyDeparture => $firstIn->lt($shiftStart->copy()->subMinutes($earlyOffset))
@@ -446,7 +453,7 @@ class ShiftWindowResolver
         $late = 0;
         $earlyLeave = 0;
 
-        if ($firstIn && $expectedStart) {
+        if (! $isOffOrHoliday && $firstIn && $expectedStart) {
             $lateGrace = max(0, (int) ($calendar?->late_grace_minutes ?? 15));
             $delta = max(0, (int) round($expectedStart->diffInMinutes($firstIn, false)));
 
@@ -455,7 +462,7 @@ class ShiftWindowResolver
             }
         }
 
-        if ($lastOut && $expectedEnd) {
+        if (! $isOffOrHoliday && $lastOut && $expectedEnd) {
             $earlyGrace = max(0, (int) ($calendar?->early_leave_grace_minutes ?? 10));
             $earlyArrivalCredit = $policy === EarlyArrivalPolicy::OffsetEarlyDeparture && $shiftStart && $firstIn && $firstIn->lt($shiftStart)
                 ? min($earlyOffset, max(0, (int) round($firstIn->diffInMinutes($shiftStart, false))))
@@ -485,22 +492,31 @@ class ShiftWindowResolver
         $weekendPresent = false;
         $holidayPresent = false;
 
-        $isOffOrHoliday = $isHoliday || ! $isWorkday;
-
         if ($dayRows->isNotEmpty() && (! $isOffOrHoliday || ($overtimeEnabled && ! $missingCheckout && $worked > 0))) {
             $status = AttendanceOverviewService::STATUS_PRESENT;
             $presentWeight = 1.0;
 
-            if ($missingCheckout) {
+            if ($inProgress) {
+                $status = AttendanceOverviewService::STATUS_PRESENT;
+                $missingCheckout = false;
+                $presentWeight = 0.0;
+                $absentWeight = 0.0;
+                $worked = 0;
+                $regular = 0;
+                $overtime = 0;
+                $late = 0;
+                $earlyLeave = 0;
+            } elseif ($missingCheckout) {
                 $status = AttendanceOverviewService::STATUS_MISSING_CHECKOUT;
 
                 match ($missingPolicy) {
-                    MissingCheckoutPolicy::IncompleteAbsent => (function () use (&$worked, &$regular, &$overtime, &$late, &$earlyLeave, &$absentWeight): void {
+                    MissingCheckoutPolicy::IncompleteAbsent => (function () use (&$worked, &$regular, &$overtime, &$late, &$earlyLeave, &$presentWeight, &$absentWeight): void {
                         $worked = 0;
                         $regular = 0;
                         $overtime = 0;
                         $late = 0;
                         $earlyLeave = 0;
+                        $presentWeight = 0.0;
                         $absentWeight = 1.0;
                     })(),
                     MissingCheckoutPolicy::IncompleteHalfDay => (function () use (&$worked, &$regular, &$overtime, &$presentWeight, &$absentWeight, $scheduled): void {
@@ -522,9 +538,11 @@ class ShiftWindowResolver
                 if ($isHoliday) {
                     $status = AttendanceOverviewService::STATUS_HOLIDAY_PRESENT;
                     $holidayPresent = true;
+                    $presentWeight = 0.0;
                 } elseif (! $isWorkday) {
                     $status = AttendanceOverviewService::STATUS_WEEKEND_PRESENT;
                     $weekendPresent = true;
+                    $presentWeight = 0.0;
                 }
 
                 $halfThreshold = ($calendar?->half_day_threshold_percent !== null && (int) $calendar->half_day_threshold_percent !== 50)
@@ -578,6 +596,7 @@ class ShiftWindowResolver
                 $absentWeight = 0.5;
             } else {
                 $leaveWeight = 1.0;
+                $scheduled = 0;
             }
         } elseif ($leave) {
             $status = AttendanceOverviewService::STATUS_ON_LEAVE_PENDING;
@@ -594,6 +613,11 @@ class ShiftWindowResolver
             ? ($missingPolicy === MissingCheckoutPolicy::IncompleteHalfDay ? $break : 0)
             : $break;
 
+        $actualNetWorked = max(0, $gross - $breakForReport);
+        $shortfall = ($presentWeight > 0 && ! $missingCheckout && ! $inProgress && $scheduled > 0)
+            ? max(0, $scheduled - $actualNetWorked)
+            : 0;
+
         return [
             'employee_id'         => $employee->getKey(),
             'date'                => $workDate,
@@ -607,13 +631,15 @@ class ShiftWindowResolver
             'break_minutes'       => $breakForReport,
             'regular_minutes'     => $regular,
             'overtime_minutes'    => $overtime,
+            'shortfall_minutes'   => $shortfall,
             'late_minutes'        => $late,
             'late_count'          => $late > 0 ? 1 : 0,
             'early_leave_minutes' => $earlyLeave,
             'early_leave_count'   => $earlyLeave > 0 ? 1 : 0,
-            'variance_minutes'    => $presentWeight > 0 || $leaveWeight > 0 ? $worked - $scheduled : 0,
+            'variance_minutes'    => ($presentWeight > 0 || $leaveWeight > 0) && $scheduled > 0 ? $worked - $scheduled : 0,
             'is_missing_checkout' => $missingCheckout,
             'is_estimated'        => $isEstimated,
+            'in_progress'         => $inProgress,
             'present_weight'      => $presentWeight,
             'absent_weight'       => $absentWeight,
             'leave_weight'        => $leaveWeight,

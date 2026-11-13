@@ -59,7 +59,7 @@ class DeviceSyncService
                 continue;
             }
 
-            $punch = Punch::firstOrCreate(
+            $punch = Punch::createOrFirst(
                 [
                     'device_id'  => $device->id,
                     'zk_user_id' => $record->userId,
@@ -155,12 +155,14 @@ class DeviceSyncService
 
         $normalizedBarcode = static::normalizeUserId($barcode);
 
-        $deviceQuery = fn ($query) => $query->when(
-            $employee->company_id !== null,
-            fn ($inner) => $inner->where(
-                fn ($company) => $company->where('company_id', $employee->company_id)->orWhereNull('company_id')
-            ),
-        );
+        $deviceQuery = fn ($query) => $query
+            ->withoutGlobalScope(CompanyScope::class)
+            ->when(
+                $employee->company_id !== null,
+                fn ($inner) => $inner->where(
+                    fn ($company) => $company->where('company_id', $employee->company_id)->orWhereNull('company_id')
+                ),
+            );
 
         $userIds = Punch::query()
             ->whereNull('employee_id')
@@ -179,6 +181,7 @@ class DeviceSyncService
         return Punch::query()
             ->whereNull('employee_id')
             ->whereIn('zk_user_id', $userIds)
+            ->whereHas('device', $deviceQuery)
             ->update(['employee_id' => $employee->getKey()]);
     }
 

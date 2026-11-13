@@ -146,6 +146,10 @@ class AbsenceReportExporter extends Exporter
                 ->label(__('attendance::filament/exports/absence-report.columns.overtime-hours'))
                 ->enabledByDefault(false)
                 ->formatStateUsing(fn (Employee $record, array $options, self $exporter): string => AttendanceRegisterTable::formatMinutesToHours($exporter->summaryFor($record, $options)['overtime_minutes'])),
+            ExportColumn::make('shortfall_minutes')
+                ->label(__('attendance::filament/exports/absence-report.columns.shortfall-hours'))
+                ->enabledByDefault(false)
+                ->formatStateUsing(fn (Employee $record, array $options, self $exporter): string => AttendanceRegisterTable::formatMinutesToHours($exporter->summaryFor($record, $options)['shortfall_minutes'])),
             ExportColumn::make('late_minutes')
                 ->label(__('attendance::filament/exports/absence-report.columns.late-minutes'))
                 ->enabledByDefault(false)

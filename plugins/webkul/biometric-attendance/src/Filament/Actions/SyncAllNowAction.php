@@ -4,7 +4,7 @@ namespace Webkul\BiometricAttendance\Filament\Actions;
 
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
-use Illuminate\Support\Facades\Artisan;
+use Webkul\BiometricAttendance\Jobs\SyncAllDevicesJob;
 use Webkul\Support\Services\CompanyContext;
 
 class SyncAllNowAction extends Action
@@ -28,34 +28,20 @@ class SyncAllNowAction extends Action
             ->label(__('biometric-attendance::filament/actions/sync-all-now.label'))
             ->icon('heroicon-o-arrow-down-tray')
             ->color('success')
-            ->visible(fn (): bool => static::canRunSync())
             ->authorize(fn (): bool => static::canRunSync())
             ->requiresConfirmation()
             ->action(function (): void {
                 $companyIds = app(CompanyContext::class)->activeIds();
 
-                $options = ['--chain' => true];
-
-                if ($companyIds !== []) {
-                    $options['--company'] = $companyIds;
-                }
-
-                $exit = Artisan::call('biometric:sync-all', $options);
-
-                if ($exit !== 0) {
-                    Notification::make()
-                        ->danger()
-                        ->title(__('biometric-attendance::filament/actions/sync-all-now.notification.failed-title'))
-                        ->body(trim(Artisan::output()) ?: null)
-                        ->send();
-
-                    return;
-                }
+                SyncAllDevicesJob::dispatch(
+                    $companyIds === [] ? null : $companyIds,
+                    auth()->id(),
+                );
 
                 Notification::make()
-                    ->success()
-                    ->title(__('biometric-attendance::filament/actions/sync-all-now.notification.title'))
-                    ->body(__('biometric-attendance::filament/actions/sync-all-now.notification.body'))
+                    ->info()
+                    ->title(__('biometric-attendance::filament/actions/sync-all-now.notification.queued-title'))
+                    ->body(__('biometric-attendance::filament/actions/sync-all-now.notification.queued-body'))
                     ->send();
             });
     }

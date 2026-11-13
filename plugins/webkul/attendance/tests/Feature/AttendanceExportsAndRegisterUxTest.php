@@ -129,6 +129,7 @@ it('renders the variance and scheduled hours columns on the totals register', fu
         expect($names)->toContain('totals.scheduled_minutes')
             ->and($names)->toContain('totals.minutes')
             ->and($names)->toContain('totals.overtime_minutes')
+            ->and($names)->toContain('totals.shortfall_minutes')
             ->and($names)->toContain('totals.late_minutes')
             ->and($names)->toContain('totals.variance_minutes')
             ->and($names)->toContain('totals.missing_checkouts');
@@ -294,7 +295,7 @@ it('describes day cells with hours, breaks and an overnight marker', function ()
 it('exposes the detailed hours columns on the export surfaces', function () {
     $summaryColumns = collect(AbsenceReportExporter::getColumns())->map->getName()->all();
 
-    expect($summaryColumns)->toContain('scheduled_minutes', 'minutes', 'overtime_minutes', 'late_minutes', 'variance_minutes');
+    expect($summaryColumns)->toContain('scheduled_minutes', 'minutes', 'overtime_minutes', 'shortfall_minutes', 'late_minutes', 'variance_minutes');
 
     $detailColumns = collect(AbsenceDetailExporter::getColumns())->map->getName()->all();
 
@@ -302,6 +303,7 @@ it('exposes the detailed hours columns on the export surfaces', function () {
         'scheduled-minutes',
         'worked-minutes',
         'overtime-minutes',
+        'shortfall-minutes',
         'late-minutes',
         'early-leave-minutes',
         'variance-minutes',

@@ -5,8 +5,6 @@ namespace Webkul\BiometricAttendance;
 use Filament\Panel;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\Gate;
-use Illuminate\Support\Facades\Log;
-use Throwable;
 use Webkul\Attendance\Writers\WriterRegistry;
 use Webkul\BiometricAttendance\Console\PushEventsCommand;
 use Webkul\BiometricAttendance\Console\ReadAttendanceCommand;
@@ -14,11 +12,11 @@ use Webkul\BiometricAttendance\Console\SyncAllCommand;
 use Webkul\BiometricAttendance\Console\SyncPunchesCommand;
 use Webkul\BiometricAttendance\Console\TestConnectionCommand;
 use Webkul\BiometricAttendance\Contracts\ZktecoClientInterface;
+use Webkul\BiometricAttendance\Jobs\SyncEmployeeRetroactivelyJob;
 use Webkul\BiometricAttendance\Models\Device;
 use Webkul\BiometricAttendance\Policies\DevicePolicy;
 use Webkul\BiometricAttendance\Scheduling\SyncSchedule;
 use Webkul\BiometricAttendance\Services\PhpZktecoClient;
-use Webkul\BiometricAttendance\Services\SyncPipeline;
 use Webkul\Employee\Models\Employee;
 use Webkul\PluginManager\Console\Commands\InstallCommand;
 use Webkul\PluginManager\Console\Commands\UninstallCommand;
@@ -40,6 +38,7 @@ class BiometricAttendanceServiceProvider extends PackageServiceProvider
                 '2026_10_04_000003_biometric_sync_watermarks',
                 '2026_10_05_000004_use_natural_key_on_biometric_punches_table',
                 '2026_11_04_000005_add_punch_direction_mode_to_biometric_devices_table',
+                '2026_11_13_000006_encrypt_comm_key_on_biometric_devices_table',
             ])
             ->hasDependencies([
                 'employees',
@@ -80,6 +79,10 @@ class BiometricAttendanceServiceProvider extends PackageServiceProvider
         // devices already delivered, without waiting for a device that may
         // be offline or unreachable.
         Employee::saved(function (Employee $employee): void {
+            if (! Package::isPluginInstalled(static::$name)) {
+                return;
+            }
+
             if (! filled($employee->barcode)) {
                 return;
             }
@@ -88,14 +91,7 @@ class BiometricAttendanceServiceProvider extends PackageServiceProvider
                 return;
             }
 
-            try {
-                $this->app->make(SyncPipeline::class)->syncEmployeeRetroactively($employee);
-            } catch (Throwable $e) {
-                Log::warning('Retroactive biometric backfill failed.', [
-                    'employee_id' => $employee->getKey(),
-                    'error'       => $e->getMessage(),
-                ]);
-            }
+            SyncEmployeeRetroactivelyJob::dispatch((int) $employee->getKey());
         });
 
         /**

@@ -104,7 +104,7 @@ class PhpZktecoClient implements ZktecoClientInterface
         $endpoint = "[{$device->host}:{$device->port}] ({$device->protocol})";
         Log::debug('biometric connect attempt', [
             'host'     => $device->host, 'port' => $device->port,
-            'protocol' => $device->protocol, 'has_comm_key' => (int) $device->comm_key !== 0,
+            'protocol' => $device->protocol, 'has_comm_key' => (int) ($device->comm_key ?? 0) !== 0,
         ]);
 
         if ($device->protocol !== 'udp') {
@@ -174,7 +174,7 @@ class PhpZktecoClient implements ZktecoClientInterface
             port: $device->port,
             shouldPing: false,
             timeout: 25,
-            password: $device->comm_key,
+            password: (int) ($device->comm_key ?? 0),
             protocol: $device->protocol === 'udp' ? 'udp' : 'tcp',
         );
     }

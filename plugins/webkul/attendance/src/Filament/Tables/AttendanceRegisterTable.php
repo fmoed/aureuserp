@@ -110,6 +110,7 @@ class AttendanceRegisterTable
 
                     if ($isPastOrToday) {
                         $attributes['wire:click'] = "mountAction('inspectDayCell', { employee_id: {$record->getKey()}, date: '{$day}' })";
+                        $attributes['x-on:click'] = "\$dispatch('inspect-day-loading')";
                     }
 
                     return array_filter($attributes, fn (mixed $value): bool => $value !== null);
@@ -208,6 +209,28 @@ class AttendanceRegisterTable
         )->toggleable();
 
         $columns[] = self::minutesColumn(
+            'totals.shortfall_minutes',
+            __('attendance::filament/pages/overview.table.columns.shortfall-hours'),
+            fn (Employee $record): int => (int) ($grid[$record->getKey()]['totals']['shortfall_minutes'] ?? 0),
+        )
+            ->color(fn (mixed $state): ?string => (int) $state > 0 ? 'danger' : null)
+            ->tooltip(function (Employee $record) use ($grid): ?string {
+                $rowTotals = $grid[$record->getKey()]['totals'] ?? [];
+                $parts = [];
+
+                if ((int) ($rowTotals['late_minutes'] ?? 0) > 0) {
+                    $parts[] = __('attendance::filament/pages/overview.table.columns.late').': '.self::formatMinutesToHours((int) $rowTotals['late_minutes']);
+                }
+
+                if ((int) ($rowTotals['early_leave_minutes'] ?? 0) > 0) {
+                    $parts[] = __('attendance::filament/pages/overview.table.columns.early-leave').': '.self::formatMinutesToHours((int) $rowTotals['early_leave_minutes']);
+                }
+
+                return $parts !== [] ? implode(' · ', $parts) : null;
+            })
+            ->toggleable();
+
+        $columns[] = self::minutesColumn(
             'totals.late_minutes',
             __('attendance::filament/pages/overview.table.columns.late-minutes'),
             fn (Employee $record): int => (int) ($grid[$record->getKey()]['totals']['late_minutes'] ?? 0),
@@ -219,7 +242,7 @@ class AttendanceRegisterTable
                     ? __('attendance::filament/pages/overview.table.columns.late-occurrences', ['count' => $count])
                     : null;
             })
-            ->toggleable();
+            ->toggleable(isToggledHiddenByDefault: true);
 
         $columns[] = self::minutesColumn(
             'totals.scheduled_minutes',

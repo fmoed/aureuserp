@@ -9,9 +9,28 @@ use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Illuminate\Support\Facades\Auth;
+use Webkul\BiometricAttendance\Enums\PunchDirectionMode;
 
 class DeviceForm
 {
+    /**
+     * @var array<string, string>|null
+     */
+    protected static ?array $timezoneOptions = null;
+
+    /**
+     * @return array<string, string>
+     */
+    public static function timezoneOptions(): array
+    {
+        if (static::$timezoneOptions === null) {
+            $identifiers = timezone_identifiers_list();
+            static::$timezoneOptions = array_combine($identifiers, $identifiers);
+        }
+
+        return static::$timezoneOptions;
+    }
+
     public static function configure(Schema $schema): Schema
     {
         return $schema
@@ -32,20 +51,15 @@ class DeviceForm
                         Select::make('timezone')
                             ->label(__('biometric-attendance::filament/resources/device.form.timezone'))
                             ->required()
-                            ->options(fn () => collect(timezone_identifiers_list())->mapWithKeys(fn ($timezone) => [$timezone => $timezone]))
+                            ->options(fn (): array => static::timezoneOptions())
                             ->default(config('app.timezone'))
                             ->preload()
                             ->searchable()
                             ->helperText(__('biometric-attendance::filament/resources/device.form.timezone-helper-text')),
                         Select::make('punch_direction_mode')
                             ->label(__('biometric-attendance::filament/resources/device.form.punch-direction-mode'))
-                            ->options([
-                                'auto_toggle'      => __('biometric-attendance::filament/resources/device.form.punch-direction-modes.auto-toggle'),
-                                'strict_direction' => __('biometric-attendance::filament/resources/device.form.punch-direction-modes.strict-direction'),
-                                'force_in'         => __('biometric-attendance::filament/resources/device.form.punch-direction-modes.force-in'),
-                                'force_out'        => __('biometric-attendance::filament/resources/device.form.punch-direction-modes.force-out'),
-                            ])
-                            ->default('auto_toggle')
+                            ->options(PunchDirectionMode::class)
+                            ->default(PunchDirectionMode::AutoToggle)
                             ->required()
                             ->helperText(__('biometric-attendance::filament/resources/device.form.punch-direction-mode-helper-text')),
                         Toggle::make('is_active')
@@ -81,9 +95,13 @@ class DeviceForm
                             ->helperText(__('biometric-attendance::filament/resources/device.form.protocol-helper-text')),
                         TextInput::make('comm_key')
                             ->label(__('biometric-attendance::filament/resources/device.form.comm-key'))
+                            ->password()
+                            ->revealable()
                             ->numeric()
                             ->default(0)
                             ->minValue(0)
+                            ->formatStateUsing(fn (string $operation, mixed $state): mixed => $operation === 'edit' ? null : $state)
+                            ->dehydrated(fn (mixed $state): bool => filled($state))
                             ->helperText(__('biometric-attendance::filament/resources/device.form.comm-key-helper-text')),
                     ]),
                 Section::make(__('biometric-attendance::filament/resources/device.form.sections.status.title'))
