@@ -9,12 +9,15 @@ use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Notifications\Notification;
+use Filament\Resources\Pages\CreateRecord;
+use Filament\Resources\Pages\EditRecord;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Livewire\Component;
 use Throwable;
 use Webkul\BiometricAttendance\Contracts\ZktecoClientInterface;
 use Webkul\BiometricAttendance\Filament\Resources\DeviceResource;
@@ -29,13 +32,15 @@ class DevicesTable
      * (create page: nothing is persisted) and for a saved record (status is
      * stamped on it).
      */
-    public static function probeConnection(Device $device): void
+    public static function probeConnection(Device $device, ?Device $statusTarget = null): void
     {
+        $target = $statusTarget ?? ($device->exists ? $device : null);
+
         try {
             $info = app(ZktecoClientInterface::class)->getDeviceInfo($device);
         } catch (Throwable $e) {
-            if ($device->exists) {
-                $device->update(['last_error' => $e->getMessage()]);
+            if ($target?->exists) {
+                $target->update(['last_error' => $e->getMessage()]);
             }
 
             Notification::make()
@@ -47,8 +52,8 @@ class DevicesTable
             return;
         }
 
-        if ($device->exists) {
-            $device->update(['last_sync_at' => now(), 'last_error' => null]);
+        if ($target?->exists) {
+            $target->update(['last_sync_at' => now(), 'last_error' => null]);
         }
 
         Notification::make()
@@ -64,9 +69,41 @@ class DevicesTable
             ->label(__('biometric-attendance::filament/resources/device.table.actions.test-connection.label'))
             ->icon('heroicon-o-signal')
             ->color('info')
-            ->authorize(fn (Device $record): bool => DeviceResource::canEdit($record))
-            ->action(function (Device $record): void {
-                static::probeConnection($record);
+            ->authorize(fn (?Device $record): bool => $record !== null
+                ? DeviceResource::canEdit($record)
+                : DeviceResource::canCreate())
+            ->action(function (?Device $record, Component $livewire): void {
+                if ($livewire instanceof CreateRecord || $livewire instanceof EditRecord) {
+                    $data = $livewire->form->getRawState();
+                    $host = array_key_exists('host', $data) ? trim((string) $data['host']) : ($record?->host ?? '');
+
+                    if (blank($host)) {
+                        Notification::make()
+                            ->danger()
+                            ->title(__('biometric-attendance::filament/resources/device.table.actions.test-connection.notification.missing-host'))
+                            ->send();
+
+                        return;
+                    }
+
+                    $probe = new Device([
+                        'name'     => $data['name'] ?? $record?->name,
+                        'host'     => $host,
+                        'port'     => (int) ($data['port'] ?? $record?->port ?? 4370),
+                        'protocol' => (string) ($data['protocol'] ?? $record?->protocol ?? 'tcp'),
+                        'comm_key' => filled($data['comm_key'] ?? null)
+                            ? (int) $data['comm_key']
+                            : (int) ($record?->comm_key ?? 0),
+                    ]);
+
+                    static::probeConnection($probe, $record);
+
+                    return;
+                }
+
+                if ($record !== null) {
+                    static::probeConnection($record);
+                }
             });
     }
 

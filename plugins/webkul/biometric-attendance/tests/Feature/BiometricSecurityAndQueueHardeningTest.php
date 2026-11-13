@@ -11,6 +11,7 @@ use Livewire\Livewire;
 use Webkul\Attendance\Models\Attendance;
 use Webkul\Attendance\Models\AttendanceEvent;
 use Webkul\Attendance\Writers\WriterRegistry;
+use Webkul\BiometricAttendance\Contracts\ZktecoClientInterface;
 use Webkul\BiometricAttendance\Enums\PunchDirectionMode;
 use Webkul\BiometricAttendance\Filament\Resources\DeviceResource\Pages\EditDevice;
 use Webkul\BiometricAttendance\Filament\Resources\DeviceResource\Pages\ListDevices;
@@ -19,6 +20,7 @@ use Webkul\BiometricAttendance\Jobs\SyncAllDevicesJob;
 use Webkul\BiometricAttendance\Jobs\SyncEmployeeRetroactivelyJob;
 use Webkul\BiometricAttendance\Models\Device;
 use Webkul\BiometricAttendance\Models\Punch;
+use Webkul\BiometricAttendance\Services\DeviceInfo;
 use Webkul\BiometricAttendance\Services\DeviceSyncService;
 use Webkul\BiometricAttendance\Services\SyncPipeline;
 use Webkul\Employee\Models\Employee;
@@ -384,4 +386,70 @@ it('preserves encrypted comm_key when editing device without changing comm_key a
         ->assertHasNoFormErrors();
 
     expect((int) $device->fresh()->comm_key)->toBe(0);
+});
+
+it('probes EditDevice using current form values while preserving stored comm_key when blank', function () {
+    $company = Company::factory()->create();
+
+    $user = FilamentHelper::actingAsCompanyUser($company, [
+        'view_any_biometric_attendance_device',
+        'view_biometric_attendance_device',
+        'update_biometric_attendance_device',
+    ], true);
+    $user->forceFill(['is_active' => true])->saveQuietly();
+
+    $device = Device::create([
+        'name'       => 'Editable Gate',
+        'host'       => '192.168.0.10',
+        'port'       => 4370,
+        'protocol'   => 'tcp',
+        'timezone'   => 'UTC',
+        'comm_key'   => 654321,
+        'is_active'  => true,
+        'company_id' => $company->id,
+    ]);
+
+    $probedHost = null;
+    $probedCommKey = null;
+
+    app()->bind(ZktecoClientInterface::class, function () use (&$probedHost, &$probedCommKey) {
+        return new class($probedHost, $probedCommKey) implements ZktecoClientInterface
+        {
+            public function __construct(
+                public ?string &$host,
+                public ?int &$commKey,
+            ) {}
+
+            public function getDeviceInfo(Device $device): DeviceInfo
+            {
+                $this->host = $device->host;
+                $this->commKey = (int) $device->comm_key;
+
+                return new DeviceInfo(
+                    deviceName: '=A300/ID',
+                    serialNumber: 'CEG918=660195',
+                    firmware: 'Ver 6.60',
+                    platform: 'ZMM200_TFT=',
+                    vendorName: 'ZKTeco Inc.',
+                    osVersion: '1',
+                    deviceTime: '2026-11-13 22:16:00',
+                    host: $device->host,
+                );
+            }
+
+            public function getAttendanceLogs(Device $device): array
+            {
+                return [];
+            }
+        };
+    });
+
+    Livewire::test(EditDevice::class, ['record' => $device->getRouteKey()])
+        ->fillForm(['host' => '192.168.0.18'])
+        ->callAction('testConnection');
+
+    expect($probedHost)->toBe('192.168.0.18')
+        ->and($probedCommKey)->toBe(654321)
+        ->and($device->fresh()->last_error)->toBeNull()
+        ->and($device->fresh()->last_sync_at)->not->toBeNull();
 });
