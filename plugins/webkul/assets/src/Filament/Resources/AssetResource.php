@@ -54,6 +54,7 @@ class AssetResource extends Resource
     {
         return parent::getEloquentQuery()->with([
             'product.category',
+            'parentAsset:id,asset_tag',
             'warehouse.custodian',
             'currentEmployee',
             'currentSite.defaultCustodian',

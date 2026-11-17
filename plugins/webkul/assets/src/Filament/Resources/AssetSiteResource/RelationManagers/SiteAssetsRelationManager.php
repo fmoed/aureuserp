@@ -37,6 +37,11 @@ class SiteAssetsRelationManager extends RelationManager
 
     protected static string $relationship = 'assets';
 
+    /**
+     * @var array<string, PresetView>|null
+     */
+    protected ?array $cachedPresetTableViews = null;
+
     public static function getTitle(Model $ownerRecord, string $pageClass): string
     {
         return __('assets::filament/resources/asset-site.relation-manager.site-assets.title');
@@ -61,6 +66,10 @@ class SiteAssetsRelationManager extends RelationManager
      */
     public function getPresetTableViews(): array
     {
+        if ($this->cachedPresetTableViews !== null) {
+            return $this->cachedPresetTableViews;
+        }
+
         $owner = $this->getOwnerRecord();
 
         if (! $owner instanceof AssetSite) {
@@ -101,7 +110,7 @@ class SiteAssetsRelationManager extends RelationManager
                 ->modifyQueryUsing(fn (Builder $query): Builder => $query->where('current_site_id', '!=', $owner->id));
         }
 
-        return $views;
+        return $this->cachedPresetTableViews = $views;
     }
 
     public function content(Schema $schema): Schema
@@ -211,7 +220,6 @@ class SiteAssetsRelationManager extends RelationManager
                             ->orderBy('full_name'),
                     )
                     ->searchable()
-                    ->preload()
                     ->multiple()
                     ->query(fn (Builder $query, array $data): Builder => filled($data['values'] ?? $data['value'] ?? null)
                         ? AssetSite::applySubtreeFilter($query, $data['values'] ?? $data['value'], 'current_site_id')
@@ -221,7 +229,6 @@ class SiteAssetsRelationManager extends RelationManager
                     ->label(__('assets::filament/resources/asset.table.filters.category'))
                     ->relationship('product.category', 'full_name')
                     ->searchable()
-                    ->preload()
                     ->multiple()
                     ->query(fn (Builder $query, array $data): Builder => filled($data['values'] ?? $data['value'] ?? null)
                         ? $query->whereHas('product', fn (Builder $q) => AssetCategory::applySubtreeFilter($q, $data['values'] ?? $data['value'], 'category_id'))
@@ -231,7 +238,6 @@ class SiteAssetsRelationManager extends RelationManager
                     ->label(__('assets::filament/resources/asset.table.filters.product'))
                     ->relationship('product', 'name')
                     ->searchable()
-                    ->preload()
                     ->multiple(),
 
                 SelectFilter::make('condition')

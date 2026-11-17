@@ -11,7 +11,7 @@ return [
     'table' => [
         'columns' => [
             'occurred-at'        => 'Date et heure',
-            'asset-tag'          => "Étiquette d'actif",
+            'asset-tag'          => "Code d'actif",
             'asset-name'         => "Nom de l'actif",
             'type'               => 'Type de mouvement',
             'quantity'           => 'Quantité',

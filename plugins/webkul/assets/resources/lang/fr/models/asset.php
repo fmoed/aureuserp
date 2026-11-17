@@ -15,5 +15,9 @@ return [
     'company'  => [
         'immutable' => 'Impossible de modifier la société d\'un actif en garde ou ayant un historique.',
     ],
-    'product-type-immutable' => 'Le type de produit ne peut pas être modifié car des enregistrements d\'actifs ou de lots existent déjà pour ce produit.',
+    'product-type-immutable'       => 'Le type de produit ne peut pas être modifié car des enregistrements d\'actifs ou de lots existent déjà pour ce produit.',
+    'terminal-status-irreversible' => 'Les statuts finaux d\'un actif ne peuvent pas être annulés directement.',
+    'product-immutable'            => 'Le produit de l\'actif ne peut pas être modifié après l\'enregistrement de mouvements opérationnels.',
+    'cost-immutable'               => 'Le coût historique d\'acquisition ne peut pas être modifié une fois que des mouvements opérationnels existent.',
+    'initial-quantity-immutable'   => 'La quantité initiale enregistrée ne peut pas être modifiée une fois que des mouvements opérationnels existent.',
 ];

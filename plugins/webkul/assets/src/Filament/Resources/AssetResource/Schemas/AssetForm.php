@@ -20,6 +20,7 @@ use Webkul\Asset\Enums\AssetCondition;
 use Webkul\Asset\Enums\AssetProductType;
 use Webkul\Asset\Enums\AssetSiteUsage;
 use Webkul\Asset\Enums\AssetStatus;
+use Webkul\Asset\Enums\AssetTrackingMode;
 use Webkul\Asset\Enums\MovementType;
 use Webkul\Asset\Filament\Resources\AssetResource\Actions\Concerns\HasCustodyHolderFields;
 use Webkul\Asset\Filament\Resources\AssetSiteResource;
@@ -57,6 +58,16 @@ class AssetForm
                                         );
                                     }),
 
+                                Hidden::make('selected_tracking_mode')
+                                    ->dehydrated(false)
+                                    ->afterStateHydrated(function (Hidden $component, ?Model $record): void {
+                                        $component->state(
+                                            $record instanceof Asset && $record->exists
+                                                ? ($record->product?->tracking_mode?->value ?? AssetTrackingMode::Unit->value)
+                                                : AssetTrackingMode::Unit->value
+                                        );
+                                    }),
+
                                 Select::make('product_id')
                                     ->label(__('assets::filament/resources/asset.form.sections.general.fields.product'))
                                     ->relationship(
@@ -70,17 +81,19 @@ class AssetForm
                                             ->where(owned_by_company($get('company_id'))),
                                     )
                                     ->getOptionLabelFromRecordUsing(fn (AssetProduct $record): string => $record->name
-                                        .($record->model ? " ({$record->model})" : '')
+                                        .($record->model ? " — {$record->model}" : '')
                                         .($record->category ? " — {$record->category->full_name}" : '')
                                         .($record->trashed() ? ' (Deleted)' : ''))
                                     ->disableOptionWhen(fn ($label): bool => str_contains((string) $label, ' (Deleted)'))
                                     ->searchable(['name', 'model'])
                                     ->preload()
                                     ->required()
+                                    ->disabled(fn (?Model $record): bool => $record instanceof Asset && $record->hasOperationalHistory())
                                     ->live()
                                     ->afterStateUpdated(function (Set $set, Get $get, mixed $state): void {
                                         if (! $state) {
                                             $set('selected_product_type', AssetProductType::Asset->value);
+                                            $set('selected_tracking_mode', AssetTrackingMode::Unit->value);
 
                                             return;
                                         }
@@ -88,6 +101,12 @@ class AssetForm
                                         $product = AssetProduct::withTrashed()->find($state);
 
                                         $set('selected_product_type', $product?->type?->value ?? AssetProductType::Asset->value);
+                                        $set(
+                                            'selected_tracking_mode',
+                                            $product?->isConsumable()
+                                                ? AssetTrackingMode::Quantity->value
+                                                : ($product?->tracking_mode?->value ?? AssetTrackingMode::Unit->value),
+                                        );
 
                                         if ($product && (blank($get('cost')) || (float) $get('cost') === 0.0) && filled($product->cost)) {
                                             $set('cost', $product->cost);
@@ -127,7 +146,7 @@ class AssetForm
 
                                 TextInput::make('serial_no')
                                     ->label(__('assets::filament/resources/asset.form.sections.general.fields.serial-no'))
-                                    ->required(fn (?Model $record, Get $get): bool => ! static::isConsumableState($record, $get) && (bool) app(AssetSettings::class)->require_serial_by_default)
+                                    ->required(fn (?Model $record, Get $get): bool => ! static::isQuantityTrackedState($record, $get) && (bool) app(AssetSettings::class)->require_serial_by_default)
                                     ->unique(
                                         ignoreRecord: true,
                                         modifyRuleUsing: fn ($rule, Get $get) => $rule->where('company_id', $get('company_id') ?: current_company_id()),
@@ -135,7 +154,7 @@ class AssetForm
                                     ->validationMessages([
                                         'unique' => __('assets::services/asset-custody.serial-already-exists'),
                                     ])
-                                    ->visible(fn (?Model $record, Get $get): bool => ! static::isConsumableState($record, $get))
+                                    ->visible(fn (?Model $record, Get $get): bool => ! static::isQuantityTrackedState($record, $get))
                                     ->maxLength(255),
 
                                 TextInput::make('initial_quantity')
@@ -144,8 +163,8 @@ class AssetForm
                                     ->numeric()
                                     ->minValue(1)
                                     ->default(1)
-                                    ->required(fn (?Model $record, Get $get): bool => static::isConsumableState($record, $get))
-                                    ->visible(fn (?Model $record, Get $get): bool => static::isConsumableState($record, $get))
+                                    ->required(fn (?Model $record, Get $get): bool => static::isQuantityTrackedState($record, $get))
+                                    ->visible(fn (?Model $record, Get $get): bool => static::isQuantityTrackedState($record, $get))
                                     ->disabled(fn (?Model $record): bool => $record !== null && $record->exists),
 
                                 Select::make('condition')
@@ -172,7 +191,8 @@ class AssetForm
                                     ->label(__('assets::filament/resources/asset.form.sections.general.fields.cost'))
                                     ->numeric()
                                     ->minValue(0)
-                                    ->default(0),
+                                    ->default(0)
+                                    ->disabled(fn (?Model $record): bool => $record instanceof Asset && $record->hasOperationalHistory()),
                             ])
                             ->columns(3),
 
@@ -263,7 +283,6 @@ class AssetForm
                                             ->orderBy('full_name'),
                                     )
                                     ->searchable()
-                                    ->preload()
                                     ->live()
                                     ->visible(fn (?Model $record, Get $get): bool => ! $record?->exists && in_array($get('initial_placement'), ['site_asset', 'employee_custody']))
                                     ->required(fn (?Model $record, Get $get): bool => ! $record?->exists && (
@@ -301,7 +320,6 @@ class AssetForm
                                             ->where(owned_by_company($get('company_id'))),
                                     )
                                     ->searchable()
-                                    ->preload()
                                     ->visible(fn (?Model $record, Get $get): bool => ! $record?->exists && $get('initial_placement') === 'employee_custody')
                                     ->required(fn (?Model $record, Get $get): bool => ! $record?->exists && $get('initial_placement') === 'employee_custody')
                                     ->columnSpanFull(),
@@ -385,6 +403,21 @@ class AssetForm
         return $record instanceof Asset
             && $record->relationLoaded('product')
             && (bool) $record->product?->isConsumable();
+    }
+
+    protected static function isQuantityTrackedState(?Model $record, Get $get): bool
+    {
+        if (static::isConsumableState($record, $get)) {
+            return true;
+        }
+
+        $trackingMode = $get('selected_tracking_mode');
+
+        if (filled($trackingMode)) {
+            return $trackingMode === AssetTrackingMode::Quantity || $trackingMode === AssetTrackingMode::Quantity->value;
+        }
+
+        return $record instanceof Asset && $record->isQuantityTracked();
     }
 
     protected static function isLockedCompany(?Model $record): bool

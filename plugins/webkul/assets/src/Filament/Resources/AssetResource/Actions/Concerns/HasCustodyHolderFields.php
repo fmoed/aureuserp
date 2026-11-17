@@ -72,7 +72,6 @@ trait HasCustodyHolderFields
                         ->orderBy('full_name'),
                 )
                 ->searchable()
-                ->preload()
                 ->rules($holderRules)
                 ->live()
                 ->required(fn (Get $get): bool => $get('allocation_mode') === 'site_asset'
@@ -133,7 +132,6 @@ trait HasCustodyHolderFields
                     modifyQueryUsing: fn (Builder $query, Asset $record) => $query->where('company_id', $record->company_id)->where('is_active', true),
                 )
                 ->searchable()
-                ->preload()
                 ->rules($holderRules)
                 ->visible(fn (Get $get): bool => ! static::isBatchConsumableMode($get) && ($get('allocation_mode') ?? 'employee_custody') === 'employee_custody')
                 ->required(fn (Get $get): bool => ! static::isBatchConsumableMode($get) && ($get('allocation_mode') ?? 'employee_custody') === 'employee_custody'),
@@ -147,7 +145,6 @@ trait HasCustodyHolderFields
                 )
                 ->multiple()
                 ->searchable()
-                ->preload()
                 ->live()
                 ->rules($holderRules)
                 ->dehydrated()
@@ -172,7 +169,7 @@ trait HasCustodyHolderFields
 
     protected static function isBatchConsumableMode(Get $get): bool
     {
-        return (bool) $get('selected_consumable')
+        return (bool) ($get('selected_quantity_tracked') ?: $get('selected_consumable'))
             && (bool) app(AssetSettings::class)->enable_consumables_batch_issue;
     }
 
@@ -274,8 +271,8 @@ trait HasCustodyHolderFields
             ->imageResizeTargetWidth('1600')
             ->imageResizeTargetHeight('1200')
             ->directory('assets/attachments')
-            ->disk('public')
-            ->visibility('public')
+            ->disk('local')
+            ->visibility('private')
             ->downloadable()
             ->openable()
             ->previewable()

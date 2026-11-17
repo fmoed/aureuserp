@@ -24,6 +24,7 @@ use Webkul\Asset\Enums\AssetSourceType;
 use Webkul\Asset\Enums\MovementType;
 use Webkul\Asset\Filament\Exports\AssetMovementExporter;
 use Webkul\Asset\Filament\Resources\AssetMovementResource\Pages\ListAssetMovements;
+use Webkul\Asset\Models\Asset;
 use Webkul\Asset\Models\AssetCategory;
 use Webkul\Asset\Models\AssetMovement;
 use Webkul\Asset\Models\AssetSite;
@@ -107,7 +108,7 @@ class AssetMovementResource extends Resource
 
                 TextColumn::make('quantity')
                     ->label(__('assets::filament/resources/asset-movement.table.columns.quantity'))
-                    ->numeric(decimalPlaces: 0)
+                    ->formatStateUsing(fn (mixed $state): string => Asset::formatQuantity($state))
                     ->sortable()
                     ->summarize(Sum::make()),
 
@@ -188,7 +189,6 @@ class AssetMovementResource extends Resource
                     ->label(__('assets::filament/resources/asset-movement.table.filters.category'))
                     ->relationship('asset.product.category', 'full_name')
                     ->searchable()
-                    ->preload()
                     ->multiple()
                     ->query(fn (Builder $query, array $data): Builder => filled($data['values'] ?? $data['value'] ?? null)
                         ? $query->whereHas('asset.product', fn (Builder $q) => AssetCategory::applySubtreeFilter($q, $data['values'] ?? $data['value'], 'category_id'))
@@ -198,7 +198,6 @@ class AssetMovementResource extends Resource
                     ->label(__('assets::filament/resources/asset-movement.table.filters.product'))
                     ->relationship('asset.product', 'name')
                     ->searchable()
-                    ->preload()
                     ->multiple(),
 
                 SelectFilter::make('asset_id')
@@ -211,7 +210,6 @@ class AssetMovementResource extends Resource
                     ->label(__('assets::filament/resources/asset-movement.table.filters.warehouse'))
                     ->relationship('toWarehouse', 'name')
                     ->searchable()
-                    ->preload()
                     ->multiple()
                     ->query(function (Builder $query, array $data): Builder {
                         $values = Arr::wrap($data['values'] ?? $data['value'] ?? null);
@@ -246,7 +244,6 @@ class AssetMovementResource extends Resource
                     ->label(__('assets::filament/resources/asset-movement.table.filters.department'))
                     ->relationship('toEmployee.department', 'name')
                     ->searchable()
-                    ->preload()
                     ->multiple()
                     ->query(function (Builder $query, array $data): Builder {
                         $values = Arr::wrap($data['values'] ?? $data['value'] ?? null);
@@ -264,7 +261,6 @@ class AssetMovementResource extends Resource
                     ->label(__('assets::filament/resources/asset-movement.table.filters.site'))
                     ->relationship('toSite', 'full_name')
                     ->searchable()
-                    ->preload()
                     ->multiple()
                     ->query(function (Builder $query, array $data): Builder {
                         $values = Arr::wrap($data['values'] ?? $data['value'] ?? null);
@@ -344,7 +340,7 @@ class AssetMovementResource extends Resource
 
                     TextEntry::make('quantity')
                         ->label(__('assets::filament/resources/asset-movement.table.columns.quantity'))
-                        ->numeric(decimalPlaces: 0),
+                        ->formatStateUsing(fn (mixed $state): string => Asset::formatQuantity($state)),
 
                     TextEntry::make('source_type')
                         ->label(__('assets::filament/resources/asset-movement.table.columns.source-type'))
@@ -388,7 +384,8 @@ class AssetMovementResource extends Resource
                 ->schema([
                     FileUpload::make('attachments')
                         ->label(__('assets::filament/resources/asset-movement.table.columns.attachments'))
-                        ->disk('public')
+                        ->disk('local')
+                        ->visibility('private')
                         ->multiple()
                         ->disabled()
                         ->dehydrated(false)

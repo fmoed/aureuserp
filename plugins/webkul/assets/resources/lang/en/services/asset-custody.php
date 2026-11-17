@@ -40,6 +40,7 @@ return [
     'bulk-tag-required'                        => 'Every unit requires an explicit asset tag because automatic tag generation is disabled. Missing: :values.',
     'bulk-duplicate-in-batch'                  => 'Duplicate values in the batch: :values.',
     'bulk-duplicate-in-database'               => 'These values already exist, including archived assets: :values.',
+    'bulk-unit-only'                           => 'Bulk unit registration is only available for unit-tracked durable assets. Quantity-tracked assets and consumables should be registered as batches from the asset form.',
     'quantity-must-be-positive'                => 'The quantity must be greater than zero.',
     'insufficient-consumable-quantity'         => 'The requested quantity (:requested) exceeds the available balance (:available).',
     'single-employee-only-for-assets'          => 'Fixed assets can only be issued to a single employee.',

@@ -45,9 +45,14 @@ class Asset extends Model
 
     public ?int $initialConsumableSiteId = null;
 
+    public bool $allowServiceCostAdjustment = false;
+
+    protected ?bool $cachedOperationalHistory = null;
+
     protected $fillable = [
         'company_id',
         'product_id',
+        'parent_asset_id',
         'warehouse_id',
         'asset_tag',
         'serial_no',
@@ -80,21 +85,35 @@ class Asset extends Model
         'cost'               => 'decimal:4',
     ];
 
-    public function isConsumable(): bool
+    protected function resolveProduct(): ?AssetProduct
     {
         if ($this->relationLoaded('product') && $this->product) {
-            return $this->product->isConsumable();
+            return $this->product;
         }
 
         if (blank($this->product_id)) {
-            return false;
+            return null;
         }
 
         return AssetProduct::withoutGlobalScopes()
             ->withTrashed()
             ->whereKey($this->product_id)
-            ->first()
-            ?->isConsumable() ?? false;
+            ->first();
+    }
+
+    public function isConsumable(): bool
+    {
+        return $this->resolveProduct()?->isConsumable() ?? false;
+    }
+
+    public function isQuantityTracked(): bool
+    {
+        return $this->resolveProduct()?->isQuantityTracked() ?? false;
+    }
+
+    public function isQuantityTrackedAsset(): bool
+    {
+        return $this->resolveProduct()?->isQuantityTrackedAsset() ?? false;
     }
 
     public static function resolveDefaultWarehouseId(?int $companyId): ?int
@@ -147,27 +166,70 @@ class Asset extends Model
             }
 
             $isConsumable = $product->type === AssetProductType::Consumable;
+            $isQuantityTrackedAsset = $product->isQuantityTrackedAsset();
+            $isQuantityTracked = $isConsumable || $isQuantityTrackedAsset;
+            $isChildRecord = filled($asset->parent_asset_id);
 
             if ($isConsumable) {
-                $enteredQuantity = (float) ($asset->initial_quantity ?? $asset->quantity ?? 1);
+                if ($isChildRecord) {
+                    $enteredQuantity = (float) ($asset->quantity ?? 1);
 
-                if ($enteredQuantity <= 0) {
-                    throw ValidationException::withMessages([
-                        'initial_quantity' => __('assets::services/asset-custody.quantity-must-be-positive'),
-                    ]);
+                    if ($enteredQuantity <= 0) {
+                        throw ValidationException::withMessages([
+                            'quantity' => __('assets::services/asset-custody.quantity-must-be-positive'),
+                        ]);
+                    }
+
+                    $asset->initial_quantity = (float) ($asset->initial_quantity ?? 0);
+                    $asset->quantity = $enteredQuantity;
+                } else {
+                    $enteredQuantity = (float) ($asset->initial_quantity ?? $asset->quantity ?? 1);
+
+                    if ($enteredQuantity <= 0) {
+                        throw ValidationException::withMessages([
+                            'initial_quantity' => __('assets::services/asset-custody.quantity-must-be-positive'),
+                        ]);
+                    }
+
+                    $asset->initial_quantity = $enteredQuantity;
                 }
 
-                $asset->initial_quantity = $enteredQuantity;
                 $asset->serial_no = null;
                 $asset->warranty_until = null;
                 $asset->condition = AssetCondition::New;
                 $asset->expected_return_at = null;
+            } elseif ($isQuantityTrackedAsset) {
+                $asset->serial_no = null;
+
+                if ($isChildRecord) {
+                    $enteredQuantity = (float) ($asset->quantity ?? 1);
+
+                    if ($enteredQuantity <= 0) {
+                        throw ValidationException::withMessages([
+                            'quantity' => __('assets::services/asset-custody.quantity-must-be-positive'),
+                        ]);
+                    }
+
+                    $asset->initial_quantity = (float) ($asset->initial_quantity ?? 0);
+                    $asset->quantity = $enteredQuantity;
+                } else {
+                    $enteredQuantity = (float) ($asset->initial_quantity ?? $asset->quantity ?? 1);
+
+                    if ($enteredQuantity <= 0) {
+                        throw ValidationException::withMessages([
+                            'initial_quantity' => __('assets::services/asset-custody.quantity-must-be-positive'),
+                        ]);
+                    }
+
+                    $asset->initial_quantity = $enteredQuantity;
+                    $asset->quantity = (float) ($asset->quantity ?? $enteredQuantity);
+                }
             } else {
                 $asset->initial_quantity = 1;
                 $asset->quantity = 1;
             }
 
-            if ((blank($asset->cost) || (float) $asset->cost === 0.0) && filled($product->cost)) {
+            if (! $isChildRecord && (blank($asset->cost) || (float) $asset->cost === 0.0) && filled($product->cost)) {
                 $asset->cost = $product->cost;
             }
 
@@ -200,7 +262,7 @@ class Asset extends Model
                 $asset->warehouse_id = null;
                 $asset->current_employee_id = null;
                 $asset->current_site_id = null;
-            } elseif ($isConsumable) {
+            } elseif ($isConsumable && ! $isChildRecord) {
                 $asset->quantity = $asset->initial_quantity;
             }
 
@@ -242,7 +304,7 @@ class Asset extends Model
 
             $settings = app(AssetSettings::class);
 
-            if (! $isConsumable && $settings->require_serial_by_default && blank($asset->serial_no)) {
+            if (! $isQuantityTracked && $settings->require_serial_by_default && blank($asset->serial_no)) {
                 throw ValidationException::withMessages([
                     'serial_no' => __('assets::services/asset-custody.serial-required'),
                 ]);
@@ -264,6 +326,10 @@ class Asset extends Model
         });
 
         static::created(function (self $asset): void {
+            if (filled($asset->parent_asset_id)) {
+                return;
+            }
+
             if (in_array($asset->status, [AssetStatus::Available, AssetStatus::Held, AssetStatus::Consumed], true)) {
                 $isConsumed = $asset->status === AssetStatus::Consumed;
                 $sourceType = $asset->initialSourceType ?? AssetSourceType::Manual;
@@ -316,22 +382,56 @@ class Asset extends Model
         });
 
         static::updating(function (self $asset): void {
+            $originalStatus = $asset->getOriginal('status');
+            $originalStatusEnum = $originalStatus instanceof AssetStatus
+                ? $originalStatus
+                : AssetStatus::tryFrom((string) $originalStatus);
+
+            if (
+                $asset->isDirty('status')
+                && in_array($originalStatusEnum, [AssetStatus::Scrapped, AssetStatus::Lost, AssetStatus::Consumed], true)
+                && $asset->status !== $originalStatusEnum
+            ) {
+                throw ValidationException::withMessages([
+                    'status' => __('assets::models/asset.terminal-status-irreversible'),
+                ]);
+            }
+
             if ($asset->isDirty('product_id')) {
-                $originalType = AssetProduct::withoutGlobalScopes()
-                    ->withTrashed()
-                    ->find($asset->getOriginal('product_id'))
-                    ?->type;
+                if ($asset->hasOperationalHistory(fresh: true)) {
+                    throw ValidationException::withMessages([
+                        'product_id' => __('assets::models/asset.product-immutable'),
+                    ]);
+                }
 
-                $newType = AssetProduct::withoutGlobalScopes()
+                $originalProduct = AssetProduct::withoutGlobalScopes()
                     ->withTrashed()
-                    ->find($asset->product_id)
-                    ?->type;
+                    ->find($asset->getOriginal('product_id'));
 
-                if ($originalType !== $newType) {
+                $newProduct = AssetProduct::withoutGlobalScopes()
+                    ->withTrashed()
+                    ->find($asset->product_id);
+
+                if (
+                    $originalProduct?->type !== $newProduct?->type
+                    || $originalProduct?->tracking_mode !== $newProduct?->tracking_mode
+                ) {
                     throw ValidationException::withMessages([
                         'product_id' => __('assets::models/asset.product-type-immutable'),
                     ]);
                 }
+            }
+
+            if ($asset->isDirty('cost') && ! $asset->allowServiceCostAdjustment && $asset->hasOperationalHistory(fresh: true)) {
+                throw ValidationException::withMessages([
+                    'cost' => __('assets::models/asset.cost-immutable'),
+                ]);
+            }
+
+            if ($asset->isDirty('initial_quantity') && $asset->hasOperationalHistory(fresh: true)) {
+                throw ValidationException::withMessages([
+                    'initial_quantity' => __('assets::models/asset.initial-quantity-immutable'),
+                ]);
             }
 
             if ($asset->isDirty('company_id')) {
@@ -365,7 +465,7 @@ class Asset extends Model
                 }
             }
 
-            if ($asset->isDirty('serial_no') && blank($asset->serial_no) && app(AssetSettings::class)->require_serial_by_default) {
+            if ($asset->isDirty('serial_no') && blank($asset->serial_no) && ! $asset->isQuantityTracked() && app(AssetSettings::class)->require_serial_by_default) {
                 throw ValidationException::withMessages([
                     'serial_no' => __('assets::services/asset-custody.serial-required'),
                 ]);
@@ -413,16 +513,10 @@ class Asset extends Model
                     ]);
                 }
 
-                AssetMovement::$allowCleanupDelete = true;
-
-                try {
-                    AssetMovement::withoutGlobalScopes()
-                        ->where('asset_id', $asset->id)
-                        ->get()
-                        ->each->delete();
-                } finally {
-                    AssetMovement::$allowCleanupDelete = false;
-                }
+                AssetMovement::withoutGlobalScopes()
+                    ->where('asset_id', $asset->id)
+                    ->where('type', MovementType::Registered)
+                    ->delete();
 
                 return;
             }
@@ -433,6 +527,59 @@ class Asset extends Model
                 ]);
             }
         });
+
+        static::saved(function (self $asset): void {
+            $asset->allowServiceCostAdjustment = false;
+            $asset->cachedOperationalHistory = null;
+        });
+    }
+
+    public static function formatQuantity(mixed $value): string
+    {
+        if ($value === null || $value === '') {
+            return '0';
+        }
+
+        $number = round((float) $value, 4);
+
+        if (abs($number - round($number)) < 0.0001) {
+            return (string) (int) round($number);
+        }
+
+        return rtrim(rtrim(number_format($number, 4, '.', ''), '0'), '.');
+    }
+
+    public function hasOperationalHistory(bool $fresh = false): bool
+    {
+        if (! $fresh && $this->cachedOperationalHistory !== null) {
+            return $this->cachedOperationalHistory;
+        }
+
+        if (! $this->exists) {
+            return $this->cachedOperationalHistory = false;
+        }
+
+        if (filled($this->parent_asset_id)) {
+            return $this->cachedOperationalHistory = true;
+        }
+
+        $originalStatus = $this->getOriginal('status') ?? $this->status;
+        $statusEnum = $originalStatus instanceof AssetStatus ? $originalStatus : AssetStatus::tryFrom((string) $originalStatus);
+
+        if ($statusEnum !== null && $statusEnum !== AssetStatus::Available) {
+            return $this->cachedOperationalHistory = true;
+        }
+
+        $hasHistory = AssetMovement::withoutGlobalScopes()
+            ->where('asset_id', $this->id)
+            ->where('type', '!=', MovementType::Registered)
+            ->exists()
+            || static::withoutGlobalScopes()
+                ->withTrashed()
+                ->where('parent_asset_id', $this->id)
+                ->exists();
+
+        return $this->cachedOperationalHistory = $hasHistory;
     }
 
     public function getNameAttribute(): ?string
@@ -494,6 +641,16 @@ class Asset extends Model
     public function product(): BelongsTo
     {
         return $this->belongsTo(AssetProduct::class, 'product_id')->withTrashed();
+    }
+
+    public function parentAsset(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'parent_asset_id')->withTrashed();
+    }
+
+    public function childAssets(): HasMany
+    {
+        return $this->hasMany(self::class, 'parent_asset_id');
     }
 
     public function warehouse(): BelongsTo

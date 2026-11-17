@@ -2,7 +2,7 @@
 
 return [
     'columns' => [
-        'asset-tag'          => 'Etiqueta do ativo',
+        'asset-tag'          => 'Código do Ativo',
         'product'            => 'Produto',
         'product-type'       => 'Tipo de Produto',
         'initial-quantity'   => 'Quantidade inicial',

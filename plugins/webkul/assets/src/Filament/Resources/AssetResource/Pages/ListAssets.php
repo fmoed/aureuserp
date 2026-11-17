@@ -8,6 +8,7 @@ use Filament\Resources\Pages\ListRecords;
 use Illuminate\Database\Eloquent\Builder;
 use Webkul\Asset\Enums\AssetProductType;
 use Webkul\Asset\Enums\AssetStatus;
+use Webkul\Asset\Enums\AssetTrackingMode;
 use Webkul\Asset\Filament\Resources\AssetResource;
 use Webkul\Asset\Filament\Resources\AssetResource\Actions\BulkRegisterAssetsAction;
 use Webkul\Asset\Settings\AssetSettings;
@@ -47,7 +48,18 @@ class ListAssets extends ListRecords
             'available' => PresetView::make(__('assets::filament/resources/asset.pages.list.tabs.available'))
                 ->icon('heroicon-s-check-circle')
                 ->favorite()
-                ->modifyQueryUsing(fn (Builder $query) => $query->where('status', AssetStatus::Available)),
+                ->modifyQueryUsing(fn (Builder $query) => $query
+                    ->where('status', AssetStatus::Available)
+                    ->where('quantity', '>', 0)),
+
+            'quantity_assets' => PresetView::make(__('assets::filament/resources/asset.pages.list.tabs.quantity-assets'))
+                ->icon('heroicon-s-squares-2x2')
+                ->favorite()
+                ->modifyQueryUsing(fn (Builder $query) => $query
+                    ->whereHas('product', fn (Builder $q) => $q
+                        ->where('type', AssetProductType::Asset)
+                        ->where('tracking_mode', AssetTrackingMode::Quantity))
+                    ->where('quantity', '>', 0)),
 
             'consumables' => PresetView::make(__('assets::filament/resources/asset.pages.list.tabs.consumables'))
                 ->icon('heroicon-s-archive-box')

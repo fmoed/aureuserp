@@ -25,6 +25,7 @@ use Webkul\Asset\Policies\AssetProductPolicy;
 use Webkul\Asset\Policies\AssetSitePolicy;
 use Webkul\Asset\Policies\AssetWarehousePolicy;
 use Webkul\Asset\Services\AssetCustodyService;
+use Webkul\Asset\Settings\AssetSettings;
 use Webkul\Chatter\Services\ChatterCleanupService;
 use Webkul\Employee\Models\Employee;
 use Webkul\PluginManager\Console\Commands\InstallCommand;
@@ -49,6 +50,7 @@ class AssetServiceProvider extends PackageServiceProvider
                 '2026_03_20_000002_create_assets_table',
                 '2026_03_20_000003_create_asset_assignments_table',
                 '2026_11_03_000001_add_consumable_quantities_to_assets_tables',
+                '2026_11_04_000001_add_tracking_mode_and_parent_asset_to_assets_tables',
             ])
             ->runsMigrations()
             ->hasSettings([
@@ -83,6 +85,8 @@ class AssetServiceProvider extends PackageServiceProvider
 
     public function packageRegistered(): void
     {
+        $this->app->scoped(AssetSettings::class);
+
         Panel::configureUsing(fn (Panel $panel) => $panel->plugin(AssetPlugin::make()));
 
         FilamentView::registerRenderHook(
@@ -219,23 +223,34 @@ class AssetServiceProvider extends PackageServiceProvider
         candidates.forEach(bindContentCtn);
 
         let active = null;
+        let activeRect = null;
         let fallback = null;
+        let fallbackRect = null;
 
         for (const contentCtn of candidates) {
             if (contentCtn.scrollWidth <= (contentCtn.clientWidth + 2)) {
                 continue;
             }
 
-            if (isInViewport(contentCtn.getBoundingClientRect())) {
+            const rect = contentCtn.getBoundingClientRect();
+
+            if (isInViewport(rect)) {
                 active = contentCtn;
+                activeRect = rect;
 
                 break;
             }
 
-            fallback ??= contentCtn;
+            if (! fallback) {
+                fallback = contentCtn;
+                fallbackRect = rect;
+            }
         }
 
-        active ??= fallback;
+        if (! active && fallback) {
+            active = fallback;
+            activeRect = fallbackRect;
+        }
 
         if (activeContentCtn !== active) {
             activeContentCtn = active;
@@ -254,34 +269,48 @@ class AssetServiceProvider extends PackageServiceProvider
             }
         }
 
-        if (! active) {
-            bar.hidden = true;
-
-            return;
-        }
-
-        const rect = active.getBoundingClientRect();
-
-        if (! isInViewport(rect)) {
-            bar.hidden = true;
-
-            return;
-        }
-
-        bar.hidden = false;
-        bar.style.left = rect.left + 'px';
-        bar.style.width = rect.width + 'px';
-        bar.dir = getComputedStyle(active).direction;
-        track.style.width = active.scrollWidth + 'px';
-
-        bar.__fiTaSyncing = true;
-        bar.scrollLeft = active.scrollLeft;
-
-        window.requestAnimationFrame(() => {
-            if (floatingBar) {
-                floatingBar.__fiTaSyncing = false;
+        if (! active || ! activeRect || ! isInViewport(activeRect)) {
+            if (! bar.hidden) {
+                bar.hidden = true;
             }
-        });
+
+            return;
+        }
+
+        const dir = getComputedStyle(active).direction;
+        const leftPx = activeRect.left + 'px';
+        const widthPx = activeRect.width + 'px';
+        const trackWidthPx = active.scrollWidth + 'px';
+        const scrollLeft = active.scrollLeft;
+        const wasHidden = bar.hidden;
+        const currentScrollLeft = wasHidden ? null : bar.scrollLeft;
+
+        if (wasHidden) {
+            bar.hidden = false;
+        }
+        if (bar.style.left !== leftPx) {
+            bar.style.left = leftPx;
+        }
+        if (bar.style.width !== widthPx) {
+            bar.style.width = widthPx;
+        }
+        if (bar.dir !== dir) {
+            bar.dir = dir;
+        }
+        if (track.style.width !== trackWidthPx) {
+            track.style.width = trackWidthPx;
+        }
+
+        if (wasHidden || currentScrollLeft !== scrollLeft) {
+            bar.__fiTaSyncing = true;
+            bar.scrollLeft = scrollLeft;
+
+            window.requestAnimationFrame(() => {
+                if (floatingBar) {
+                    floatingBar.__fiTaSyncing = false;
+                }
+            });
+        }
     };
 
     const scheduleUpdate = () => {

@@ -40,6 +40,7 @@ return [
     'bulk-tag-required'                        => 'Cada unidade requer uma etiqueta de ativo explícita porque a geração automática está desativada. Faltando: :values.',
     'bulk-duplicate-in-batch'                  => 'Valores duplicados no lote: :values.',
     'bulk-duplicate-in-database'               => 'Estes valores já existem, incluindo ativos arquivados: :values.',
+    'bulk-unit-only'                           => 'O registro em lote por unidade está disponível apenas para ativos duráveis rastreados por unidade. Ativos por quantidade e consumíveis devem ser registrados em lote pelo formulário de ativo.',
     'quantity-must-be-positive'                => 'A quantidade deve ser maior que zero.',
     'insufficient-consumable-quantity'         => 'A quantidade solicitada (:requested) excede o saldo disponível (:available).',
     'single-employee-only-for-assets'          => 'Ativos fixos só podem ser entregues a um único funcionário.',

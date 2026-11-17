@@ -8,7 +8,10 @@ use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
+use Filament\Schemas\Components\Grid;
+use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Illuminate\Validation\ValidationException;
 use Webkul\Asset\Enums\AssetCondition;
@@ -50,50 +53,74 @@ class TransferAssetAction
             ->modalDescription(__('assets::filament/resources/asset.actions.transfer.modal.description'))
             ->modalSubmitActionLabel(__('assets::filament/resources/asset.actions.transfer.modal.submit'))
             ->schema([
-                ...$holderFields,
+                Section::make(__('assets::filament/resources/asset.actions.transfer.sections.assignment'))
+                    ->schema([
+                        TextInput::make('quantity')
+                            ->label(__('assets::filament/resources/asset.actions.transfer.fields.quantity'))
+                            ->helperText(__('assets::filament/resources/asset.actions.transfer.fields.quantity-help'))
+                            ->numeric()
+                            ->integer()
+                            ->minValue(1)
+                            ->maxValue(fn (Asset $record): float => (float) $record->quantity)
+                            ->default(fn (Asset $record): int => max(1, (int) $record->quantity))
+                            ->visible(fn (Asset $record): bool => $record->isQuantityTrackedAsset() && (float) $record->quantity > 1)
+                            ->required(fn (Asset $record): bool => $record->isQuantityTrackedAsset() && (float) $record->quantity > 1),
 
-                Select::make('condition_in')
-                    ->label(__('assets::filament/resources/asset.actions.transfer.fields.condition-in'))
-                    ->options(AssetCondition::class)
-                    ->default(fn (Asset $record): mixed => $record->condition)
-                    ->required()
-                    ->live(),
+                        ...$holderFields,
+                    ]),
 
-                DateTimePicker::make('issued_at')
-                    ->label(__('assets::filament/resources/asset.actions.transfer.fields.issued-at'))
-                    ->default(now())
-                    ->required(),
+                Section::make(__('assets::filament/resources/asset.actions.transfer.sections.handover'))
+                    ->schema([
+                        Grid::make(2)
+                            ->schema([
+                                Select::make('condition_in')
+                                    ->label(__('assets::filament/resources/asset.actions.transfer.fields.condition-in'))
+                                    ->options(AssetCondition::class)
+                                    ->default(fn (Asset $record): mixed => $record->condition)
+                                    ->required()
+                                    ->live(),
 
-                DatePicker::make('expected_return_at')
-                    ->label(__('assets::filament/resources/asset.actions.transfer.fields.expected-return-at'))
-                    ->afterOrEqual('issued_at')
-                    ->native(false)
-                    ->default(fn (): ?string => filled(app(AssetSettings::class)->default_custody_duration_days) && (int) app(AssetSettings::class)->default_custody_duration_days > 0
-                        ? now()->addDays((int) app(AssetSettings::class)->default_custody_duration_days)->toDateString()
-                        : null)
-                    ->required(fn (Get $get): bool => (bool) app(AssetSettings::class)->require_expected_return_date && ($get('allocation_mode') ?? 'employee_custody') === 'employee_custody')
-                    ->visible(fn (Get $get): bool => ($get('allocation_mode') ?? 'employee_custody') === 'employee_custody'),
+                                DateTimePicker::make('issued_at')
+                                    ->label(__('assets::filament/resources/asset.actions.transfer.fields.issued-at'))
+                                    ->default(now())
+                                    ->required(),
 
-                Textarea::make('issue_note')
-                    ->label(__('assets::filament/resources/asset.actions.transfer.fields.issue-note'))
-                    ->rows(3),
+                                DatePicker::make('expected_return_at')
+                                    ->label(__('assets::filament/resources/asset.actions.transfer.fields.expected-return-at'))
+                                    ->afterOrEqual('issued_at')
+                                    ->native(false)
+                                    ->default(fn (): ?string => filled(app(AssetSettings::class)->default_custody_duration_days) && (int) app(AssetSettings::class)->default_custody_duration_days > 0
+                                        ? now()->addDays((int) app(AssetSettings::class)->default_custody_duration_days)->toDateString()
+                                        : null)
+                                    ->required(fn (Get $get): bool => (bool) app(AssetSettings::class)->require_expected_return_date && ($get('allocation_mode') ?? 'employee_custody') === 'employee_custody')
+                                    ->visible(fn (Get $get): bool => ($get('allocation_mode') ?? 'employee_custody') === 'employee_custody')
+                                    ->columnSpanFull(),
+                            ]),
 
-                Textarea::make('return_note')
-                    ->label(__('assets::filament/resources/asset.actions.transfer.fields.return-note'))
-                    ->rows(3),
+                        Grid::make(2)
+                            ->schema([
+                                Textarea::make('issue_note')
+                                    ->label(__('assets::filament/resources/asset.actions.transfer.fields.issue-note'))
+                                    ->rows(3),
 
-                static::attachmentUploadField('return_attachments', __('assets::filament/resources/asset.actions.transfer.fields.return-attachments'))
-                    ->required(function (Get $get): bool {
-                        $settings = app(AssetSettings::class);
-                        $cond = $get('condition_in');
-                        $val = $cond instanceof AssetCondition ? $cond->value : (string) $cond;
+                                Textarea::make('return_note')
+                                    ->label(__('assets::filament/resources/asset.actions.transfer.fields.return-note'))
+                                    ->rows(3),
+                            ]),
 
-                        return (bool) $settings->require_attachments_on_damage
-                            && in_array($val, [AssetCondition::Poor->value, AssetCondition::Damaged->value], true);
-                    }),
+                        static::attachmentUploadField('return_attachments', __('assets::filament/resources/asset.actions.transfer.fields.return-attachments'))
+                            ->required(function (Get $get): bool {
+                                $settings = app(AssetSettings::class);
+                                $cond = $get('condition_in');
+                                $val = $cond instanceof AssetCondition ? $cond->value : (string) $cond;
 
-                static::attachmentUploadField('issue_attachments', __('assets::filament/resources/asset.actions.transfer.fields.issue-attachments'))
-                    ->required(fn (): bool => (bool) app(AssetSettings::class)->require_attachments_on_custody),
+                                return (bool) $settings->require_attachments_on_damage
+                                    && in_array($val, [AssetCondition::Poor->value, AssetCondition::Damaged->value], true);
+                            }),
+
+                        static::attachmentUploadField('issue_attachments', __('assets::filament/resources/asset.actions.transfer.fields.issue-attachments'))
+                            ->required(fn (): bool => (bool) app(AssetSettings::class)->require_attachments_on_custody),
+                    ]),
             ])
             ->action(function (Asset $record, array $data, Action $action): void {
                 try {

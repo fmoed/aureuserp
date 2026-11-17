@@ -156,12 +156,12 @@ it('saves custody attachment and termination governance settings', function () {
     FilamentHelper::actingAs(['page_asset_manage_assets']);
 
     Livewire::test(ManageGovernance::class)
-        ->assertFormFieldDoesNotExist('termination_approval_cost_threshold')
         ->fillForm([
-            'require_attachments_on_custody'     => true,
-            'require_attachments_on_damage'      => true,
-            'require_attachments_on_termination' => true,
-            'restrict_termination_to_managers'   => true,
+            'require_attachments_on_custody'      => true,
+            'require_attachments_on_damage'       => true,
+            'require_attachments_on_termination'  => true,
+            'restrict_termination_to_managers'    => true,
+            'termination_approval_cost_threshold' => 2000,
         ])
         ->call('save')
         ->assertHasNoFormErrors();
@@ -170,7 +170,8 @@ it('saves custody attachment and termination governance settings', function () {
     expect($settings->require_attachments_on_custody)->toBeTrue()
         ->and($settings->require_attachments_on_damage)->toBeTrue()
         ->and($settings->require_attachments_on_termination)->toBeTrue()
-        ->and($settings->restrict_termination_to_managers)->toBeTrue();
+        ->and($settings->restrict_termination_to_managers)->toBeTrue()
+        ->and((float) $settings->termination_approval_cost_threshold)->toBe(2000.0);
 });
 
 it('locks tag_prefix once an asset is registered in the system (Issue 06)', function () {
@@ -227,10 +228,10 @@ it('saves all extended settings including padding, duration, and thresholds', fu
         ->assertHasNoFormErrors();
 
     Livewire::test(GlobalManageGovernance::class)
-        ->assertFormFieldDoesNotExist('termination_approval_cost_threshold')
         ->fillForm([
-            'require_attachments_on_termination' => true,
-            'restrict_termination_to_managers'   => true,
+            'require_attachments_on_termination'  => true,
+            'restrict_termination_to_managers'    => true,
+            'termination_approval_cost_threshold' => 2000,
         ])
         ->call('save')
         ->assertHasNoFormErrors();
@@ -242,7 +243,8 @@ it('saves all extended settings including padding, duration, and thresholds', fu
         ->and($settings->require_expected_return_date)->toBeTrue()
         ->and($settings->prevent_duplicate_product_custody)->toBeTrue()
         ->and($settings->require_attachments_on_termination)->toBeTrue()
-        ->and($settings->restrict_termination_to_managers)->toBeTrue();
+        ->and($settings->restrict_termination_to_managers)->toBeTrue()
+        ->and((float) $settings->termination_approval_cost_threshold)->toBe(2000.0);
 
     $sequence = Sequence::withoutGlobalScope(CompanyScope::class)
         ->where('code', AssetCustodyService::SEQUENCE_CODE)

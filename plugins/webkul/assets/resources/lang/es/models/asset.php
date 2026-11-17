@@ -15,5 +15,9 @@ return [
     'company'  => [
         'immutable' => 'No se puede cambiar la empresa de un activo en custodia o con historial.',
     ],
-    'product-type-immutable' => 'No se puede cambiar el tipo de producto porque ya existen registros de activos o lotes para este producto.',
+    'product-type-immutable'       => 'No se puede cambiar el tipo de producto porque ya existen registros de activos o lotes para este producto.',
+    'terminal-status-irreversible' => 'Los estados finales del activo no se pueden revertir directamente.',
+    'product-immutable'            => 'No se puede cambiar el producto del activo después de registrar movimientos operativos.',
+    'cost-immutable'               => 'No se puede modificar el costo histórico una vez que existen movimientos operativos.',
+    'initial-quantity-immutable'   => 'No se puede cambiar la cantidad inicial registrada una vez que existen movimientos operativos.',
 ];

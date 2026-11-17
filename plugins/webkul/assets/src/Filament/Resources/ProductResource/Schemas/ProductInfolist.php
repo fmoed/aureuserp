@@ -30,6 +30,10 @@ class ProductInfolist
                                     ->label(__('assets::filament/resources/product.infolist.sections.general.entries.type'))
                                     ->badge(),
 
+                                TextEntry::make('tracking_mode')
+                                    ->label(__('assets::filament/resources/product.infolist.sections.general.entries.tracking-mode'))
+                                    ->badge(),
+
                                 TextEntry::make('category.full_name')
                                     ->label(__('assets::filament/resources/product.infolist.sections.general.entries.category'))
                                     ->badge()

@@ -4,6 +4,8 @@ require_once __DIR__.'/../../../support/tests/Helpers/TestBootstrapHelper.php';
 require_once __DIR__.'/../../../support/tests/Helpers/FilamentHelper.php';
 require_once __DIR__.'/../../../support/tests/Helpers/CompanyHelper.php';
 
+use Filament\Tables\Filters\SelectFilter;
+use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Webkul\Asset\AssetServiceProvider;
 use Webkul\Asset\Enums\AssetCondition;
@@ -16,6 +18,8 @@ use Webkul\Asset\Filament\Resources\AssetResource\Pages\EditAsset;
 use Webkul\Asset\Filament\Resources\AssetResource\Pages\ListAssets;
 use Webkul\Asset\Filament\Resources\AssetResource\Pages\ViewAsset;
 use Webkul\Asset\Filament\Resources\AssetResource\RelationManagers\AssignmentsRelationManager;
+use Webkul\Asset\Filament\Resources\AssetSiteResource\Pages\ViewAssetSite;
+use Webkul\Asset\Filament\Resources\AssetSiteResource\RelationManagers\SiteAssetsRelationManager;
 use Webkul\Asset\Models\Asset;
 use Webkul\Asset\Models\AssetCategory;
 use Webkul\Asset\Models\AssetMovement;
@@ -1242,4 +1246,199 @@ it('registers the scrollable recipients container and applies it to the recipien
             expect($field->getExtraFieldWrapperAttributes())->toMatchArray(['class' => 'fi-fo-select-scrollable'])
                 ->and($field->getExtraAttributes())->toMatchArray(['class' => 'fi-fo-select-scrollable']);
         });
+});
+
+it('does not preload searchable select filters or custody holder selects while keeping search working', function (): void {
+    FilamentHelper::actingAs(['view_any_asset_asset', 'view_asset_asset', 'update_asset_asset']);
+
+    $company = Company::query()->firstOrFail();
+
+    $warehouse = AssetWarehouse::factory()->company($company)->create([
+        'name' => 'Primary Perf Warehouse',
+    ]);
+
+    AssetWarehouse::factory()->company($company)->create([
+        'name' => 'Sentinel Perf Warehouse XYZ',
+    ]);
+
+    $category = AssetCategory::factory()->create([
+        'name' => 'Primary Perf Category',
+    ]);
+
+    $sentinelCategory = AssetCategory::factory()->create([
+        'name' => 'Sentinel Perf Category XYZ',
+    ]);
+
+    $individualProduct = AssetProduct::factory()->company($company)->create([
+        'category_id' => $category->id,
+        'name'        => 'Primary Laptop Model',
+        'type'        => AssetProductType::Asset,
+    ]);
+
+    $consumableProduct = AssetProduct::factory()->company($company)->create([
+        'category_id' => $category->id,
+        'name'        => 'Primary Consumable Batch',
+        'type'        => AssetProductType::Consumable,
+    ]);
+
+    AssetProduct::factory()->company($company)->create([
+        'category_id' => $sentinelCategory->id,
+        'name'        => 'Sentinel Unused Product XYZ',
+        'type'        => AssetProductType::Asset,
+    ]);
+
+    AssetSite::factory()->company($company)->custodyZone()->active()->create([
+        'name' => 'Sentinel Unused Site XYZ',
+    ]);
+
+    $department = Department::factory()->create([
+        'company_id' => $company->id,
+        'name'       => 'Primary Perf Department',
+    ]);
+
+    createAssetEmployee($company, [
+        'department_id' => $department->id,
+        'name'          => 'Sentinel Unused Employee XYZ',
+    ]);
+
+    $asset = Asset::factory()->available()->forProduct($individualProduct)->create([
+        'company_id'   => $company->id,
+        'warehouse_id' => $warehouse->id,
+    ]);
+
+    $batch = Asset::query()->create([
+        'company_id'       => $company->id,
+        'product_id'       => $consumableProduct->id,
+        'warehouse_id'     => $warehouse->id,
+        'initial_quantity' => 5,
+    ]);
+
+    $list = Livewire::test(ListAssets::class)->assertOk();
+    $initialHtml = $list->html();
+
+    expect($initialHtml)
+        ->not->toContain('Sentinel Unused Site XYZ')
+        ->not->toContain('Sentinel Unused Employee XYZ')
+        ->not->toContain('Sentinel Unused Product XYZ')
+        ->not->toContain('Sentinel Perf Category XYZ')
+        ->not->toContain('Sentinel Perf Warehouse XYZ');
+
+    $filters = $list->instance()->getTable()->getFilters();
+
+    foreach (['category_id', 'current_employee_id', 'department_id', 'warehouse_id', 'current_site_id', 'site_type_id', 'product_id', 'company_id'] as $filterName) {
+        $filter = $filters[$filterName];
+        $field = $filter->getFormField();
+
+        expect($filter)->toBeInstanceOf(SelectFilter::class)
+            ->and($field->isSearchable())->toBeTrue()
+            ->and($field->isPreloaded())->toBeFalse();
+    }
+
+    $list->mountTableAction('issue', $asset)
+        ->tap(function ($component): void {
+            expect($component->html())
+                ->not->toContain('Sentinel Unused Site XYZ')
+                ->not->toContain('Sentinel Unused Employee XYZ');
+
+            $fields = $component->instance()->mountedActionSchema0->getFlatFields(withHidden: true);
+
+            expect($fields['site_id']->isSearchable())->toBeTrue()
+                ->and($fields['site_id']->isPreloaded())->toBeFalse()
+                ->and($fields['employee_id']->isSearchable())->toBeTrue()
+                ->and($fields['employee_id']->isPreloaded())->toBeFalse()
+                ->and(array_values($fields['site_id']->getSearchResults('Sentinel Unused Site')))
+                ->toContain('Sentinel Unused Site XYZ')
+                ->and(implode(' ', array_values($fields['employee_id']->getSearchResults('Sentinel Unused Employee'))))
+                ->toContain('Sentinel Unused Employee XYZ');
+        });
+
+    Livewire::test(ListAssets::class)
+        ->mountTableAction('issue', $batch)
+        ->tap(function ($component): void {
+            expect($component->html())
+                ->not->toContain('Sentinel Unused Site XYZ')
+                ->not->toContain('Sentinel Unused Employee XYZ');
+
+            $fields = $component->instance()->mountedActionSchema0->getFlatFields(withHidden: true);
+
+            expect($fields['site_id']->isPreloaded())->toBeFalse()
+                ->and($fields['employee_ids']->isSearchable())->toBeTrue()
+                ->and($fields['employee_ids']->isPreloaded())->toBeFalse()
+                ->and($fields['department_ids']->isPreloaded())->toBeTrue()
+                ->and(array_values($fields['site_id']->getSearchResults('Sentinel Unused Site')))
+                ->toContain('Sentinel Unused Site XYZ')
+                ->and(implode(' ', array_values($fields['employee_ids']->getSearchResults('Sentinel Unused Employee'))))
+                ->toContain('Sentinel Unused Employee XYZ');
+        });
+});
+
+it('scopes AssetSettings per request and avoids per-row settings queries on list assets', function (): void {
+    FilamentHelper::actingAs(['view_any_asset_asset', 'view_asset_asset', 'update_asset_asset']);
+
+    $company = Company::query()->firstOrFail();
+    $warehouse = AssetWarehouse::factory()->company($company)->create();
+    $product = AssetProduct::factory()->company($company)->create([
+        'type' => AssetProductType::Asset,
+    ]);
+
+    foreach (range(1, 5) as $index) {
+        Asset::factory()->available()->forProduct($product)->create([
+            'company_id'   => $company->id,
+            'warehouse_id' => $warehouse->id,
+            'asset_tag'    => "SA-00{$index}",
+        ]);
+    }
+
+    expect(app(AssetSettings::class))->toBe(app(AssetSettings::class));
+
+    app()->forgetInstance(AssetSettings::class);
+    DB::flushQueryLog();
+    DB::enableQueryLog();
+
+    try {
+        Livewire::test(ListAssets::class)->assertOk();
+        $queries = DB::getQueryLog();
+    } finally {
+        DB::disableQueryLog();
+    }
+
+    $assetSettingsQueries = array_filter($queries, static function (array $query): bool {
+        return str_contains($query['query'], 'from `settings`')
+            && in_array('assets', $query['bindings'] ?? [], true);
+    });
+
+    expect(count($assetSettingsQueries))->toBeLessThanOrEqual(1);
+});
+
+it('memoizes site assets relation manager preset table views across repeated calls', function (): void {
+    FilamentHelper::actingAs(['view_any_asset_asset', 'view_asset_asset', 'view_any_asset_asset::site', 'view_asset_asset::site']);
+
+    $company = Company::query()->firstOrFail();
+
+    $parentSite = AssetSite::factory()->company($company)->assetLocation()->create([
+        'name' => 'Memo View Parent Site',
+    ]);
+
+    $component = Livewire::test(SiteAssetsRelationManager::class, [
+        'ownerRecord' => $parentSite,
+        'pageClass'   => ViewAssetSite::class,
+    ])->assertOk();
+
+    DB::flushQueryLog();
+    DB::enableQueryLog();
+
+    try {
+        $viewsFirstCall = $component->instance()->getPresetTableViews();
+        $viewsSecondCall = $component->instance()->getPresetTableViews();
+        $queries = DB::getQueryLog();
+    } finally {
+        DB::disableQueryLog();
+    }
+
+    $presetCountQueries = array_filter($queries, static function (array $query): bool {
+        return stripos($query['query'], 'count(*) as total') !== false;
+    });
+
+    expect($viewsFirstCall)->toBe($viewsSecondCall)
+        ->and($presetCountQueries)->toBeEmpty();
 });

@@ -11,7 +11,7 @@ return [
     'table' => [
         'columns' => [
             'occurred-at'        => 'التاريخ والوقت',
-            'asset-tag'          => 'رقم الأصل',
+            'asset-tag'          => 'رمز الأصل',
             'asset-name'         => 'اسم الأصل',
             'type'               => 'نوع الحركة',
             'quantity'           => 'الكمية',

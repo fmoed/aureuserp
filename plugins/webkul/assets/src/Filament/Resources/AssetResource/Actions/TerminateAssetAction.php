@@ -5,6 +5,7 @@ namespace Webkul\Asset\Filament\Resources\AssetResource\Actions;
 use Filament\Actions\Action;
 use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Illuminate\Validation\ValidationException;
 use Webkul\Asset\Enums\AssetStatus;
@@ -36,6 +37,19 @@ class TerminateAssetAction
             ->modalDescription(__("assets::filament/resources/asset.actions.{$translationKey}.modal.description"))
             ->modalSubmitActionLabel(__("assets::filament/resources/asset.actions.{$translationKey}.modal.submit"))
             ->schema([
+                TextInput::make('quantity')
+                    ->label(__("assets::filament/resources/asset.actions.{$translationKey}.fields.quantity"))
+                    ->helperText(__("assets::filament/resources/asset.actions.{$translationKey}.fields.quantity-help"))
+                    ->numeric()
+                    ->integer(fn (Asset $record): bool => $record->isQuantityTrackedAsset())
+                    ->minValue(fn (Asset $record): float|int => $record->isConsumable() ? 0.01 : 1)
+                    ->maxValue(fn (Asset $record): float => (float) $record->quantity)
+                    ->default(fn (Asset $record): float|int => $record->isConsumable()
+                        ? (float) $record->quantity
+                        : max(1, (int) $record->quantity))
+                    ->visible(fn (Asset $record): bool => $record->isQuantityTracked() && (float) $record->quantity > 1)
+                    ->required(fn (Asset $record): bool => $record->isQuantityTracked() && (float) $record->quantity > 1),
+
                 DateTimePicker::make('ended_at')
                     ->label(__("assets::filament/resources/asset.actions.{$translationKey}.fields.ended-at"))
                     ->default(now())
@@ -52,6 +66,7 @@ class TerminateAssetAction
             ->action(function (Asset $record, array $data, Action $action) use ($targetStatus, $translationKey): void {
                 $payload = [
                     'ended_at'           => $data['ended_at'] ?? now(),
+                    'quantity'           => $data['quantity'] ?? null,
                     'return_note'        => $data['note'] ?? null,
                     'return_attachments' => $data['return_attachments'] ?? null,
                 ];

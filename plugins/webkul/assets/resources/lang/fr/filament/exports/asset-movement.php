@@ -3,7 +3,7 @@
 return [
     'columns' => [
         'occurred-at'        => 'Date et heure',
-        'asset-tag'          => 'Étiquette de l\'actif',
+        'asset-tag'          => 'Code d\'actif',
         'product'            => 'Produit',
         'model'              => 'Modèle',
         'category'           => 'Catégorie',

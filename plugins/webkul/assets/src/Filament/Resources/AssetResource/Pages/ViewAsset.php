@@ -11,6 +11,7 @@ use Illuminate\Validation\ValidationException;
 use Webkul\Asset\Enums\AssetStatus;
 use Webkul\Asset\Filament\Resources\AssetResource;
 use Webkul\Asset\Filament\Resources\AssetResource\Actions\IssueAssetAction;
+use Webkul\Asset\Filament\Resources\AssetResource\Actions\PrintAssetLabelsAction;
 use Webkul\Asset\Filament\Resources\AssetResource\Actions\ReturnAssetAction;
 use Webkul\Asset\Filament\Resources\AssetResource\Actions\TerminateAssetAction;
 use Webkul\Asset\Filament\Resources\AssetResource\Actions\TransferAssetAction;
@@ -27,6 +28,7 @@ class ViewAsset extends ViewRecord
             IssueAssetAction::make(),
             TransferAssetAction::make(),
             ReturnAssetAction::make(),
+            PrintAssetLabelsAction::make(),
             EditAction::make(),
             ChatterAction::make()
                 ->resource(static::$resource),

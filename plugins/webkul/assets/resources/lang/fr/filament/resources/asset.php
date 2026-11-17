@@ -18,7 +18,7 @@ return [
                     'product-type'               => 'Type de Produit',
                     'quantity'                   => 'Quantité',
                     'quantity-help'              => 'Quantité totale reçue dans ce lot.',
-                    'asset-tag'                  => "Numéro d'actif",
+                    'asset-tag'                  => "Code d'actif",
                     'asset-tag-help'             => "Identifiant unique pour l'actif au sein de l'entreprise.",
                     'asset-tag-auto-placeholder' => 'AST-XXXXX (Généré automatiquement)',
                     'serial-no'                  => 'Numéro de série',
@@ -53,10 +53,11 @@ return [
 
     'table' => [
         'columns' => [
-            'asset-tag'        => "Numéro d'actif",
+            'asset-tag'        => "Code d'actif",
             'name'             => "Nom de l'actif",
             'product'          => 'Produit',
             'product-type'     => 'Type de Produit',
+            'tracking-mode'    => 'Mode de Suivi',
             'quantity'         => 'Quantité',
             'model'            => 'Modèle',
             'serial-no'        => 'N° de série',
@@ -97,6 +98,7 @@ return [
             'site-type'           => 'Type de site',
             'product'             => 'Produit',
             'product-type'        => 'Type de Produit',
+            'tracking-mode'       => 'Mode de Suivi',
             'company'             => 'Société',
         ],
 
@@ -124,13 +126,25 @@ return [
     ],
 
     'actions' => [
+        'print-labels' => [
+            'label'         => 'Imprimer les étiquettes',
+            'bulk-label'    => 'Imprimer les étiquettes sélectionnées',
+            'modal-heading' => 'Imprimer les étiquettes code-barres',
+            'submit'        => 'Télécharger le PDF',
+            'fields'        => [
+                'copies'      => 'Nombre d\'étiquettes',
+                'copies-help' => 'Nombre total d\'étiquettes à imprimer sur format A4.',
+            ],
+        ],
+
         'issue' => [
             'label' => 'Attribuer la garde',
             'modal' => [
-                'heading'                => "Attribuer la garde de l'actif",
-                'description'            => 'Attribuer cet actif à un employé ou un site.',
-                'consumable-description' => 'Solde disponible : :quantity unités. Les quantités sont déduites de ce lot lors de la remise.',
-                'submit'                 => 'Confirmer l\'attribution',
+                'heading'                    => "Attribuer la garde de l'actif",
+                'description'                => 'Attribuer cet actif à un employé ou un site.',
+                'consumable-description'     => 'Solde disponible : :quantity unités. Les quantités sont déduites de ce lot lors de la remise.',
+                'quantity-asset-description' => 'Solde disponible : :quantity unités. Les quantités remises restent suivies en garde retournable.',
+                'submit'                     => 'Confirmer l\'attribution',
             ],
             'fields' => [
                 'allocation-mode'    => "Mode d'attribution",
@@ -167,7 +181,13 @@ return [
                 'description' => 'Transférer cet actif vers un nouvel employé ou site.',
                 'submit'      => 'Confirmer le transfert',
             ],
+            'sections' => [
+                'assignment' => 'Affectation de garde',
+                'handover'   => 'Documentation de passation',
+            ],
             'fields' => [
+                'quantity'           => 'Quantité à transférer',
+                'quantity-help'      => 'Transférer tout ou partie de la quantité de cette garde.',
                 'allocation-mode'    => "Mode d'attribution",
                 'allocation-modes'   => [
                     'employee-custody' => 'Garde employé',
@@ -199,6 +219,8 @@ return [
                 'submit'      => 'Confirmer le retour',
             ],
             'fields' => [
+                'quantity'           => 'Quantité à retourner',
+                'quantity-help'      => 'Retourner tout ou partie de la quantité en entrepôt.',
                 'condition-in'       => 'État au retour',
                 'ended-at'           => 'Date et heure de retour',
                 'warehouse'          => 'Entrepôt de réception',
@@ -219,9 +241,11 @@ return [
                 'submit'      => 'Confirmer la mise au rebut',
             ],
             'fields' => [
-                'ended-at'    => 'Date et heure de mise au rebut',
-                'note'        => 'Motif / Remarque de mise au rebut',
-                'attachments' => 'Pièces jointes de mise au rebut',
+                'quantity'      => 'Quantité à mettre au rebut',
+                'quantity-help' => 'Indiquez le nombre d\'unités à mettre au rebut.',
+                'ended-at'      => 'Date et heure de mise au rebut',
+                'note'          => 'Motif / Remarque de mise au rebut',
+                'attachments'   => 'Pièces jointes de mise au rebut',
             ],
             'notification' => [
                 'title' => 'Actif mis au rebut',
@@ -237,9 +261,11 @@ return [
                 'submit'      => 'Confirmer la perte',
             ],
             'fields' => [
-                'ended-at'    => 'Date et heure de signalement',
-                'note'        => 'Détails du signalement / perte',
-                'attachments' => 'Pièces jointes de signalement',
+                'quantity'      => 'Quantité perdue',
+                'quantity-help' => 'Indiquez le nombre d\'unités à déclarer perdues.',
+                'ended-at'      => 'Date et heure de signalement',
+                'note'          => 'Détails du signalement / perte',
+                'attachments'   => 'Pièces jointes de signalement',
             ],
             'notification' => [
                 'title' => 'Actif marqué comme perdu',
@@ -283,15 +309,15 @@ return [
                 'note'                => 'Note du lot',
                 'tracking-mode'       => 'Mode de suivi',
                 'modes'               => [
-                    'with-serials'    => 'Unités sérialisées (suivies par n° de série)',
-                    'without-serials' => 'Unités non sérialisées (chaises, outils, etc.)',
+                    'with-serials'    => 'Unités sérialisées',
+                    'without-serials' => 'Unités sans numéro de série',
                 ],
                 'serials-raw'         => 'Liste des numéros de série (un par ligne ou séparés par des virgules)',
                 'serials-raw-help'    => 'Collez les numéros : un par ligne ou TAG,NUMERO_SERIE.',
                 'parse-to-table'      => 'Convertir en tableau',
                 'items'               => 'Entrées d\'unités',
                 'serial-no'           => 'Numéro de série',
-                'asset-tag'           => 'Étiquette d\'actif',
+                'asset-tag'           => "Code d'actif",
                 'quantity'            => 'Quantité à générer',
                 'tags-raw'            => "Numéros d'actifs préimprimés",
                 'tags-raw-help'       => "Un numéro d'actif par ligne pour les unités non sérialisées.",
@@ -314,14 +340,16 @@ return [
             'identity' => [
                 'title'   => "Identité de l'actif",
                 'entries' => [
-                    'asset-tag' => "Numéro d'actif",
-                    'name'      => "Nom de l'actif",
-                    'product'   => 'Produit',
-                    'model'     => 'Modèle',
-                    'category'  => 'Catégorie',
-                    'serial-no' => 'Numéro de série',
-                    'status'    => 'Statut',
-                    'condition' => 'État',
+                    'asset-tag'     => "Code d'actif",
+                    'parent-asset'  => 'Lot principal',
+                    'tracking-mode' => 'Mode de suivi',
+                    'name'          => "Nom de l'actif",
+                    'product'       => 'Produit',
+                    'model'         => 'Modèle',
+                    'category'      => 'Catégorie',
+                    'serial-no'     => 'Numéro de série',
+                    'status'        => 'Statut',
+                    'condition'     => 'État',
                 ],
             ],
 
@@ -409,16 +437,17 @@ return [
                 ],
             ],
             'tabs' => [
-                'all'            => 'Tous',
-                'available'      => 'Disponible',
-                'consumables'    => 'Consommables',
-                'site-assets'    => 'Actifs de site fixe',
-                'with-employees' => 'Chez les employés',
-                'at-sites'       => 'Sur sites / entrepôts',
-                'in-the-field'   => 'Sur le terrain',
-                'overdue-return' => 'Retour en retard',
-                'scrapped-lost'  => 'Mis au rebut / Perdu',
-                'archived'       => 'Archivé',
+                'all'             => 'Tous',
+                'available'       => 'Disponible',
+                'quantity-assets' => 'Actifs par Quantité',
+                'consumables'     => 'Consommables',
+                'site-assets'     => 'Actifs de site fixe',
+                'with-employees'  => 'Chez les employés',
+                'at-sites'        => 'Sur sites / entrepôts',
+                'in-the-field'    => 'Sur le terrain',
+                'overdue-return'  => 'Retour en retard',
+                'scrapped-lost'   => 'Mis au rebut / Perdu',
+                'archived'        => 'Archivé',
             ],
         ],
         'create' => [
