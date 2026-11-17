@@ -160,6 +160,10 @@ class AssetCustodyService
                 return $this->issueConsumableLocked($asset, $data);
             }
 
+            if ($asset->isQuantityTrackedAsset()) {
+                return $this->issueQuantityAssetLocked($asset, $data);
+            }
+
             if ($asset->status !== AssetStatus::Available) {
                 $this->fail('asset', 'asset-not-available');
             }
@@ -254,7 +258,11 @@ class AssetCustodyService
             $this->fail('quantity', 'quantity-must-be-positive');
         }
 
-        $recipients = $this->resolveConsumableRecipients($asset, $data);
+        $recipients = $this->resolveBatchRecipients(
+            $asset,
+            $data,
+            (bool) $settings->require_site_on_consumable_issue,
+        );
 
         $available = (float) $asset->quantity;
         $totalQuantity = round($quantityPerRecipient * count($recipients), 4);
@@ -298,11 +306,127 @@ class AssetCustodyService
         }
 
         $remaining = round($available - $totalQuantity, 4);
+        $sourceCost = (float) ($asset->cost ?? 0);
+        $consumedCost = $this->allocateProportionalCost($sourceCost, $available, $totalQuantity);
 
+        $asset->allowServiceCostAdjustment = true;
         $asset->update([
             'quantity'     => max(0, $remaining),
+            'cost'         => $remaining <= 0 ? 0 : max(0, round($sourceCost - $consumedCost, 2)),
             'status'       => $remaining <= 0 ? AssetStatus::Consumed : AssetStatus::Available,
             'warehouse_id' => $remaining <= 0 ? null : $asset->warehouse_id,
+        ]);
+
+        return $movement;
+    }
+
+    /**
+     * @param  array{employee_id?: int|null, employee_ids?: array<int, int>|null, site_id?: int|null, allocation_mode?: string|null, quantity?: float|int|string|null, condition_out?: AssetCondition|string|null, condition?: AssetCondition|string|null, issued_at?: mixed, occurred_at?: mixed, expected_return_at?: mixed, note?: string|null, issue_note?: string|null, attachments?: array<int, string>|null, issue_attachments?: array<int, string>|null, issued_by_user_id?: int|null, performed_by_user_id?: int|null}  $data
+     */
+    protected function issueQuantityAssetLocked(Asset $asset, array $data): AssetMovement
+    {
+        if ($asset->status !== AssetStatus::Available || (float) $asset->quantity <= 0) {
+            $this->fail('asset', 'asset-not-available');
+        }
+
+        $settings = app(AssetSettings::class);
+
+        $quantityPerRecipient = filled($data['quantity'] ?? null)
+            ? (float) $data['quantity']
+            : 1.0;
+
+        if ($quantityPerRecipient <= 0) {
+            $this->fail('quantity', 'quantity-must-be-positive');
+        }
+
+        $conditionOut = $this->resolveCondition($data['condition_out'] ?? $data['condition'] ?? null, $asset->condition);
+        $rootAssetId = $asset->parent_asset_id ?? $asset->id;
+
+        $recipients = $this->resolveBatchRecipients(
+            $asset,
+            $data,
+            (bool) $settings->require_site_on_custody,
+            $rootAssetId,
+            $conditionOut,
+        );
+
+        $available = (float) $asset->quantity;
+        $totalQuantity = round($quantityPerRecipient * count($recipients), 4);
+
+        if ($totalQuantity > $available) {
+            $this->fail('quantity', 'insufficient-consumable-quantity', [
+                'requested' => $totalQuantity,
+                'available' => $available,
+            ]);
+        }
+
+        $issuedAt = $data['issued_at'] ?? $data['occurred_at'] ?? now();
+        $hasEmployeeRecipient = collect($recipients)->contains(fn (array $recipient): bool => filled($recipient['employee_id']));
+        $expectedReturnAt = $hasEmployeeRecipient ? ($data['expected_return_at'] ?? null) : null;
+        $this->assertExpectedReturnNotBeforeIssued($expectedReturnAt, $issuedAt);
+
+        if ($settings->require_expected_return_date && $hasEmployeeRecipient && blank($expectedReturnAt)) {
+            $this->fail('expected_return_at', 'expected-return-required');
+        }
+
+        $attachments = $this->normalizeAttachments($data['attachments'] ?? $data['issue_attachments'] ?? null);
+
+        if ($settings->require_attachments_on_custody && $attachments === []) {
+            $this->fail('attachments', 'attachments-required');
+        }
+
+        $note = $data['note'] ?? $data['issue_note'] ?? null;
+        $performedBy = $data['issued_by_user_id'] ?? $data['performed_by_user_id'] ?? Auth::id();
+        $fromWarehouseId = $asset->warehouse_id;
+        $remainingCost = (float) ($asset->cost ?? 0);
+        $remainingAvailable = $available;
+
+        $movement = null;
+
+        foreach ($recipients as $recipient) {
+            $allocatedCost = $this->allocateProportionalCost($remainingCost, $remainingAvailable, $quantityPerRecipient);
+            $remainingCost = max(0, round($remainingCost - $allocatedCost, 2));
+            $remainingAvailable = max(0, round($remainingAvailable - $quantityPerRecipient, 4));
+
+            $childAsset = $this->upsertHeldChildAssetLocked(
+                sourceLot: $asset,
+                rootAssetId: $rootAssetId,
+                employeeId: $recipient['employee_id'],
+                siteId: $recipient['site_id'],
+                quantity: $quantityPerRecipient,
+                condition: $conditionOut,
+                issuedAt: $issuedAt,
+                expectedReturnAt: $recipient['employee_id'] ? $expectedReturnAt : null,
+                note: $note,
+                creatorId: $performedBy,
+                allocatedCost: $allocatedCost,
+            );
+
+            $movement = AssetMovement::query()->create([
+                'company_id'           => $asset->company_id,
+                'asset_id'             => $childAsset->id,
+                'type'                 => MovementType::Issued,
+                'quantity'             => $quantityPerRecipient,
+                'reference_type'       => $childAsset->id !== $asset->id ? $asset->getMorphClass() : null,
+                'reference_id'         => $childAsset->id !== $asset->id ? $asset->id : null,
+                'from_warehouse_id'    => $fromWarehouseId,
+                'to_employee_id'       => $recipient['employee_id'],
+                'to_site_id'           => $recipient['site_id'],
+                'condition'            => $conditionOut,
+                'occurred_at'          => $issuedAt,
+                'expected_return_at'   => $recipient['employee_id'] ? $expectedReturnAt : null,
+                'performed_by_user_id' => $performedBy,
+                'note'                 => $note,
+                'attachments'          => $attachments ?: null,
+            ]);
+
+            $this->log($childAsset, 'issued', $recipient, $note);
+        }
+
+        $asset->allowServiceCostAdjustment = true;
+        $asset->update([
+            'quantity' => max(0, round($available - $totalQuantity, 4)),
+            'cost'     => $remainingCost,
         ]);
 
         return $movement;
@@ -312,8 +436,13 @@ class AssetCustodyService
      * @param  array<string, mixed>  $data
      * @return array<int, array{employee_id: int|null, site_id: int|null}>
      */
-    protected function resolveConsumableRecipients(Asset $asset, array $data): array
-    {
+    protected function resolveBatchRecipients(
+        Asset $asset,
+        array $data,
+        bool $requireSite,
+        ?int $rootAssetId = null,
+        ?AssetCondition $conditionOut = null,
+    ): array {
         $settings = app(AssetSettings::class);
         $siteId = filled($data['site_id'] ?? null) ? (int) $data['site_id'] : null;
 
@@ -326,7 +455,7 @@ class AssetCustodyService
                 $this->fail('site_id', 'site-required');
             }
 
-            $this->assertConsumableRecipient($asset, null, $siteId);
+            $this->assertBatchRecipient($asset, null, $siteId, $requireSite, $rootAssetId, $conditionOut);
 
             return [['employee_id' => null, 'site_id' => $siteId]];
         }
@@ -365,7 +494,7 @@ class AssetCustodyService
         $recipients = [];
 
         foreach ($employeeIds as $employeeId) {
-            $this->assertConsumableRecipient($asset, $employeeId, $siteId);
+            $this->assertBatchRecipient($asset, $employeeId, $siteId, $requireSite, $rootAssetId, $conditionOut);
 
             $recipients[] = ['employee_id' => $employeeId, 'site_id' => $siteId];
         }
@@ -373,8 +502,18 @@ class AssetCustodyService
         return $recipients;
     }
 
-    protected function assertConsumableRecipient(Asset $asset, ?int $employeeId, ?int $siteId): void
-    {
+    protected function assertBatchRecipient(
+        Asset $asset,
+        ?int $employeeId,
+        ?int $siteId,
+        bool $requireSite,
+        ?int $rootAssetId = null,
+        ?AssetCondition $conditionOut = null,
+    ): void {
+        $existingChildId = ($rootAssetId && $conditionOut)
+            ? $this->findHeldChildAssetLocked($asset, $rootAssetId, $employeeId, $siteId, $conditionOut)?->id
+            : null;
+
         $dummy = new Asset([
             'company_id'          => $asset->company_id,
             'product_id'          => $asset->product_id,
@@ -382,14 +521,85 @@ class AssetCustodyService
             'current_site_id'     => $siteId,
             'status'              => AssetStatus::Held,
         ]);
-        $dummy->id = $asset->id;
+        $dummy->id = $existingChildId ?? $asset->id;
         $dummy->exists = true;
 
-        $this->validateHeldState($dummy, (bool) app(AssetSettings::class)->require_site_on_consumable_issue);
+        $this->validateHeldState($dummy, $requireSite);
+    }
+
+    protected function findHeldChildAssetLocked(
+        Asset $sourceLot,
+        int $rootAssetId,
+        ?int $employeeId,
+        ?int $siteId,
+        AssetCondition $condition,
+        ?int $excludeAssetId = null,
+    ): ?Asset {
+        return Asset::withoutGlobalScopes()
+            ->where('company_id', $sourceLot->company_id)
+            ->where('parent_asset_id', $rootAssetId)
+            ->where('product_id', $sourceLot->product_id)
+            ->where('status', AssetStatus::Held)
+            ->where('condition', $condition)
+            ->when($employeeId, fn ($q) => $q->where('current_employee_id', $employeeId), fn ($q) => $q->whereNull('current_employee_id'))
+            ->when($siteId, fn ($q) => $q->where('current_site_id', $siteId), fn ($q) => $q->whereNull('current_site_id'))
+            ->when($excludeAssetId, fn ($q) => $q->where('id', '!=', $excludeAssetId))
+            ->whereNull('deleted_at')
+            ->lockForUpdate()
+            ->first();
+    }
+
+    protected function upsertHeldChildAssetLocked(
+        Asset $sourceLot,
+        int $rootAssetId,
+        ?int $employeeId,
+        ?int $siteId,
+        float $quantity,
+        AssetCondition $condition,
+        mixed $issuedAt,
+        mixed $expectedReturnAt,
+        ?string $note,
+        ?int $creatorId,
+        float $allocatedCost = 0.0,
+    ): Asset {
+        $existing = $this->findHeldChildAssetLocked($sourceLot, $rootAssetId, $employeeId, $siteId, $condition);
+
+        if ($existing) {
+            $existing->allowServiceCostAdjustment = true;
+            $existing->update([
+                'quantity'           => round((float) $existing->quantity + $quantity, 4),
+                'cost'               => round((float) $existing->cost + $allocatedCost, 2),
+                'issued_at'          => $issuedAt,
+                'expected_return_at' => $expectedReturnAt ?? $existing->expected_return_at,
+                'custody_note'       => filled($note) ? $note : $existing->custody_note,
+            ]);
+
+            return $existing;
+        }
+
+        return Asset::query()->create([
+            'company_id'          => $sourceLot->company_id,
+            'product_id'          => $sourceLot->product_id,
+            'parent_asset_id'     => $rootAssetId,
+            'warehouse_id'        => null,
+            'current_employee_id' => $employeeId,
+            'current_site_id'     => $siteId,
+            'status'              => AssetStatus::Held,
+            'condition'           => $condition,
+            'initial_quantity'    => 0,
+            'quantity'            => $quantity,
+            'purchase_date'       => $sourceLot->purchase_date,
+            'warranty_until'      => $sourceLot->warranty_until,
+            'cost'                => round($allocatedCost, 2),
+            'issued_at'           => $issuedAt,
+            'expected_return_at'  => $expectedReturnAt,
+            'custody_note'        => $note,
+            'creator_id'          => $creatorId,
+        ]);
     }
 
     /**
-     * @param  array{employee_id?: int|null, site_id?: int|null, allocation_mode?: string|null, condition_in?: AssetCondition|string|null, condition_out?: AssetCondition|string|null, condition?: AssetCondition|string|null, issued_at?: mixed, occurred_at?: mixed, expected_return_at?: mixed, note?: string|null, issue_note?: string|null, return_note?: string|null, attachments?: array<int, string>|null, issue_attachments?: array<int, string>|null, return_attachments?: array<int, string>|null, performed_by_user_id?: int|null, issued_by_user_id?: int|null}  $data
+     * @param  array{employee_id?: int|null, site_id?: int|null, allocation_mode?: string|null, quantity?: float|int|string|null, condition_in?: AssetCondition|string|null, condition_out?: AssetCondition|string|null, condition?: AssetCondition|string|null, issued_at?: mixed, occurred_at?: mixed, expected_return_at?: mixed, note?: string|null, issue_note?: string|null, return_note?: string|null, attachments?: array<int, string>|null, issue_attachments?: array<int, string>|null, return_attachments?: array<int, string>|null, performed_by_user_id?: int|null, issued_by_user_id?: int|null}  $data
      */
     public function transfer(Asset $asset, array $data): AssetMovement
     {
@@ -398,6 +608,27 @@ class AssetCustodyService
 
             if ($asset->status !== AssetStatus::Held) {
                 $this->fail('asset', 'asset-not-held');
+            }
+
+            $isQuantityAsset = $asset->isQuantityTrackedAsset();
+            $available = (float) ($asset->quantity ?? 1);
+            $transferQuantity = ($isQuantityAsset && filled($data['quantity'] ?? null))
+                ? (float) $data['quantity']
+                : $available;
+
+            if ($isQuantityAsset) {
+                if ($transferQuantity <= 0) {
+                    $this->fail('quantity', 'quantity-must-be-positive');
+                }
+
+                if ($transferQuantity > $available) {
+                    $this->fail('quantity', 'insufficient-consumable-quantity', [
+                        'requested' => $transferQuantity,
+                        'available' => $available,
+                    ]);
+                }
+            } else {
+                $transferQuantity = 1.0;
             }
 
             $holder = $this->resolveHolder($asset, $data);
@@ -433,19 +664,117 @@ class AssetCustodyService
             }
 
             $note = $data['note'] ?? $data['issue_note'] ?? $data['return_note'] ?? null;
+            $performedBy = $data['performed_by_user_id'] ?? $data['issued_by_user_id'] ?? Auth::id();
+            $fromEmployeeId = $asset->current_employee_id;
+            $fromSiteId = $asset->current_site_id;
+
+            if ($isQuantityAsset) {
+                $rootAssetId = $asset->parent_asset_id ?? $asset->id;
+                $sourceCost = (float) ($asset->cost ?? 0);
+                $transferredCost = $this->allocateProportionalCost($sourceCost, $available, $transferQuantity);
+                $existingTarget = $this->findHeldChildAssetLocked(
+                    $asset,
+                    $rootAssetId,
+                    $holder['employee_id'],
+                    $holder['site_id'],
+                    $condition,
+                    $asset->id,
+                );
+
+                if ($transferQuantity < $available) {
+                    $asset->allowServiceCostAdjustment = true;
+                    $asset->update([
+                        'quantity' => round($available - $transferQuantity, 4),
+                        'cost'     => max(0, round($sourceCost - $transferredCost, 2)),
+                    ]);
+
+                    $targetAsset = $this->upsertHeldChildAssetLocked(
+                        sourceLot: $asset,
+                        rootAssetId: $rootAssetId,
+                        employeeId: $holder['employee_id'],
+                        siteId: $holder['site_id'],
+                        quantity: $transferQuantity,
+                        condition: $condition,
+                        issuedAt: $occurredAt,
+                        expectedReturnAt: $expectedReturnAt,
+                        note: $note,
+                        creatorId: $performedBy,
+                        allocatedCost: $transferredCost,
+                    );
+
+                    $movement = AssetMovement::query()->create([
+                        'company_id'           => $asset->company_id,
+                        'asset_id'             => $targetAsset->id,
+                        'type'                 => MovementType::Transferred,
+                        'quantity'             => $transferQuantity,
+                        'reference_type'       => $targetAsset->id !== $asset->id ? $asset->getMorphClass() : null,
+                        'reference_id'         => $targetAsset->id !== $asset->id ? $asset->id : null,
+                        'from_employee_id'     => $fromEmployeeId,
+                        'from_site_id'         => $fromSiteId,
+                        'to_employee_id'       => $holder['employee_id'],
+                        'to_site_id'           => $holder['site_id'],
+                        'condition'            => $condition,
+                        'occurred_at'          => $occurredAt,
+                        'expected_return_at'   => $expectedReturnAt,
+                        'performed_by_user_id' => $performedBy,
+                        'note'                 => $note,
+                        'attachments'          => $attachments ?: null,
+                    ]);
+
+                    $this->log($targetAsset, 'transferred', $holder, $note);
+
+                    return $movement;
+                }
+
+                if ($existingTarget && filled($asset->parent_asset_id)) {
+                    $existingTarget->allowServiceCostAdjustment = true;
+                    $existingTarget->update([
+                        'quantity'           => round((float) $existingTarget->quantity + $transferQuantity, 4),
+                        'cost'               => round((float) $existingTarget->cost + $transferredCost, 2),
+                        'issued_at'          => $occurredAt,
+                        'expected_return_at' => $expectedReturnAt ?? $existingTarget->expected_return_at,
+                        'custody_note'       => filled($note) ? $note : $existingTarget->custody_note,
+                    ]);
+
+                    $movement = AssetMovement::query()->create([
+                        'company_id'           => $asset->company_id,
+                        'asset_id'             => $existingTarget->id,
+                        'type'                 => MovementType::Transferred,
+                        'quantity'             => $transferQuantity,
+                        'reference_type'       => $asset->getMorphClass(),
+                        'reference_id'         => $asset->id,
+                        'from_employee_id'     => $fromEmployeeId,
+                        'from_site_id'         => $fromSiteId,
+                        'to_employee_id'       => $holder['employee_id'],
+                        'to_site_id'           => $holder['site_id'],
+                        'condition'            => $condition,
+                        'occurred_at'          => $occurredAt,
+                        'expected_return_at'   => $expectedReturnAt,
+                        'performed_by_user_id' => $performedBy,
+                        'note'                 => $note,
+                        'attachments'          => $attachments ?: null,
+                    ]);
+
+                    $this->archiveMergedChildAsset($asset);
+                    $this->log($existingTarget, 'transferred', $holder, $note);
+
+                    return $movement;
+                }
+            }
 
             $movement = AssetMovement::query()->create([
                 'company_id'           => $asset->company_id,
                 'asset_id'             => $asset->id,
                 'type'                 => MovementType::Transferred,
-                'from_employee_id'     => $asset->current_employee_id,
-                'from_site_id'         => $asset->current_site_id,
+                'quantity'             => $transferQuantity,
+                'from_employee_id'     => $fromEmployeeId,
+                'from_site_id'         => $fromSiteId,
                 'to_employee_id'       => $holder['employee_id'],
                 'to_site_id'           => $holder['site_id'],
                 'condition'            => $condition,
                 'occurred_at'          => $occurredAt,
                 'expected_return_at'   => $expectedReturnAt,
-                'performed_by_user_id' => $data['performed_by_user_id'] ?? $data['issued_by_user_id'] ?? Auth::id(),
+                'performed_by_user_id' => $performedBy,
                 'note'                 => $note,
                 'attachments'          => $attachments ?: null,
             ]);
@@ -467,7 +796,7 @@ class AssetCustodyService
     }
 
     /**
-     * @param  array{warehouse_id?: int|null, condition_in?: AssetCondition|string|null, condition?: AssetCondition|string|null, ended_at?: mixed, occurred_at?: mixed, return_note?: string|null, note?: string|null, attachments?: array<int, string>|null, return_attachments?: array<int, string>|null, performed_by_user_id?: int|null, ended_by_user_id?: int|null}  $data
+     * @param  array{warehouse_id?: int|null, quantity?: float|int|string|null, condition_in?: AssetCondition|string|null, condition?: AssetCondition|string|null, ended_at?: mixed, occurred_at?: mixed, return_note?: string|null, note?: string|null, attachments?: array<int, string>|null, return_attachments?: array<int, string>|null, performed_by_user_id?: int|null, ended_by_user_id?: int|null}  $data
      */
     public function return(Asset $asset, array $data): AssetMovement
     {
@@ -476,6 +805,27 @@ class AssetCustodyService
 
             if ($asset->status !== AssetStatus::Held) {
                 $this->fail('asset', 'asset-not-held');
+            }
+
+            $isQuantityAsset = $asset->isQuantityTrackedAsset();
+            $heldQuantity = (float) ($asset->quantity ?? 1);
+            $returnQuantity = ($isQuantityAsset && filled($data['quantity'] ?? null))
+                ? (float) $data['quantity']
+                : $heldQuantity;
+
+            if ($isQuantityAsset) {
+                if ($returnQuantity <= 0) {
+                    $this->fail('quantity', 'quantity-must-be-positive');
+                }
+
+                if ($returnQuantity > $heldQuantity) {
+                    $this->fail('quantity', 'insufficient-consumable-quantity', [
+                        'requested' => $returnQuantity,
+                        'available' => $heldQuantity,
+                    ]);
+                }
+            } else {
+                $returnQuantity = 1.0;
             }
 
             $endedAt = $data['ended_at'] ?? $data['occurred_at'] ?? now();
@@ -503,17 +853,135 @@ class AssetCustodyService
             }
 
             $warehouseId = $this->resolveWarehouseId((int) $asset->company_id, $data['warehouse_id'] ?? null);
+            $performedBy = $data['performed_by_user_id'] ?? $data['ended_by_user_id'] ?? Auth::id();
+            $fromEmployeeId = $asset->current_employee_id;
+            $fromSiteId = $asset->current_site_id;
+            $holder = ($fromEmployeeId || $fromSiteId) ? [
+                'employee_id' => $fromEmployeeId,
+                'site_id'     => $fromSiteId,
+            ] : null;
+
+            if ($isQuantityAsset) {
+                $targetWarehouseLot = $this->resolveReturnTargetWarehouseLotLocked($asset, $warehouseId);
+
+                if ($targetWarehouseLot) {
+                    return $this->mergeReturnedQuantityIntoWarehouseLotLocked(
+                        sourceHeldAsset: $asset,
+                        targetWarehouseLot: $targetWarehouseLot,
+                        returnQuantity: $returnQuantity,
+                        heldQuantity: $heldQuantity,
+                        warehouseId: $warehouseId,
+                        conditionIn: $conditionIn,
+                        endedAt: $endedAt,
+                        performedBy: $performedBy,
+                        note: $note,
+                        attachments: $attachments,
+                        holder: $holder,
+                    );
+                }
+
+                if ($returnQuantity < $heldQuantity) {
+                    $remainingHeld = round($heldQuantity - $returnQuantity, 4);
+                    $sourceCost = (float) ($asset->cost ?? 0);
+                    $returnedCost = $this->allocateProportionalCost($sourceCost, $heldQuantity, $returnQuantity);
+                    $remainingCost = max(0, round($sourceCost - $returnedCost, 2));
+
+                    if (filled($asset->parent_asset_id)) {
+                        $asset->allowServiceCostAdjustment = true;
+                        $asset->update([
+                            'quantity' => $remainingHeld,
+                            'cost'     => $remainingCost,
+                        ]);
+
+                        $returnedLot = Asset::query()->create([
+                            'company_id'          => $asset->company_id,
+                            'product_id'          => $asset->product_id,
+                            'parent_asset_id'     => $asset->parent_asset_id,
+                            'warehouse_id'        => $warehouseId,
+                            'current_employee_id' => null,
+                            'current_site_id'     => null,
+                            'status'              => AssetStatus::Available,
+                            'condition'           => $conditionIn,
+                            'initial_quantity'    => 0,
+                            'quantity'            => $returnQuantity,
+                            'purchase_date'       => $asset->purchase_date,
+                            'warranty_until'      => $asset->warranty_until,
+                            'cost'                => $returnedCost,
+                            'creator_id'          => $performedBy,
+                        ]);
+
+                        $movement = AssetMovement::query()->create([
+                            'company_id'           => $asset->company_id,
+                            'asset_id'             => $returnedLot->id,
+                            'type'                 => MovementType::Returned,
+                            'quantity'             => $returnQuantity,
+                            'reference_type'       => $asset->getMorphClass(),
+                            'reference_id'         => $asset->id,
+                            'from_employee_id'     => $fromEmployeeId,
+                            'from_site_id'         => $fromSiteId,
+                            'to_warehouse_id'      => $warehouseId,
+                            'condition'            => $conditionIn,
+                            'occurred_at'          => $endedAt,
+                            'performed_by_user_id' => $performedBy,
+                            'note'                 => $note,
+                            'attachments'          => $attachments ?: null,
+                        ]);
+
+                        $this->log($returnedLot, 'returned', $holder, $note, $conditionIn);
+
+                        return $movement;
+                    }
+
+                    // Root lot registered directly as Held: split remaining held quantity into child row.
+                    $splitChild = $this->upsertHeldChildAssetLocked(
+                        sourceLot: $asset,
+                        rootAssetId: $asset->id,
+                        employeeId: $fromEmployeeId,
+                        siteId: $fromSiteId,
+                        quantity: $remainingHeld,
+                        condition: $asset->condition ?? AssetCondition::New,
+                        issuedAt: $asset->issued_at ?? now(),
+                        expectedReturnAt: $asset->expected_return_at,
+                        note: $asset->custody_note,
+                        creatorId: $performedBy,
+                        allocatedCost: $remainingCost,
+                    );
+
+                    AssetMovement::query()->create([
+                        'company_id'           => $asset->company_id,
+                        'asset_id'             => $splitChild->id,
+                        'type'                 => MovementType::Issued,
+                        'quantity'             => $remainingHeld,
+                        'reference_type'       => $asset->getMorphClass(),
+                        'reference_id'         => $asset->id,
+                        'to_employee_id'       => $fromEmployeeId,
+                        'to_site_id'           => $fromSiteId,
+                        'condition'            => $asset->condition ?? AssetCondition::New,
+                        'occurred_at'          => $asset->issued_at ?? $endedAt,
+                        'expected_return_at'   => $asset->expected_return_at,
+                        'performed_by_user_id' => $performedBy,
+                        'note'                 => $asset->custody_note,
+                    ]);
+
+                    $asset->allowServiceCostAdjustment = true;
+                    $asset->update([
+                        'quantity' => $returnQuantity,
+                        'cost'     => $returnedCost,
+                    ]);
+                }
+            }
 
             $movement = AssetMovement::query()->create([
                 'company_id'           => $asset->company_id,
                 'asset_id'             => $asset->id,
                 'type'                 => MovementType::Returned,
-                'from_employee_id'     => $asset->current_employee_id,
-                'from_site_id'         => $asset->current_site_id,
+                'quantity'             => $returnQuantity,
+                'from_employee_id'     => $fromEmployeeId,
+                'from_site_id'         => $fromSiteId,
                 'to_warehouse_id'      => $warehouseId,
                 'condition'            => $conditionIn,
                 'occurred_at'          => $endedAt,
-                'performed_by_user_id' => $data['performed_by_user_id'] ?? $data['ended_by_user_id'] ?? Auth::id(),
+                'performed_by_user_id' => $performedBy,
                 'note'                 => $note,
                 'attachments'          => $attachments ?: null,
             ]);
@@ -529,11 +997,6 @@ class AssetCustodyService
                 'custody_note'        => null,
             ]);
 
-            $holder = ($movement->from_employee_id || $movement->from_site_id) ? [
-                'employee_id' => $movement->from_employee_id,
-                'site_id'     => $movement->from_site_id,
-            ] : null;
-
             $this->log(
                 $asset,
                 'returned',
@@ -543,6 +1006,137 @@ class AssetCustodyService
             );
 
             return $movement;
+        });
+    }
+
+    protected function resolveReturnTargetWarehouseLotLocked(Asset $asset, int $warehouseId): ?Asset
+    {
+        if (filled($asset->parent_asset_id)) {
+            $parentLot = Asset::withoutGlobalScopes()
+                ->withTrashed()
+                ->whereKey($asset->parent_asset_id)
+                ->lockForUpdate()
+                ->first();
+
+            if (
+                $parentLot
+                && ! $parentLot->trashed()
+                && $parentLot->status === AssetStatus::Available
+                && ((int) $parentLot->warehouse_id === $warehouseId || (float) $parentLot->quantity <= 0)
+            ) {
+                return $parentLot;
+            }
+        }
+
+        $rootAssetId = $asset->parent_asset_id ?? $asset->id;
+
+        return Asset::withoutGlobalScopes()
+            ->where('company_id', $asset->company_id)
+            ->where('parent_asset_id', $rootAssetId)
+            ->where('status', AssetStatus::Available)
+            ->where('warehouse_id', $warehouseId)
+            ->whereNull('deleted_at')
+            ->lockForUpdate()
+            ->first();
+    }
+
+    /**
+     * @param  array<int, string>  $attachments
+     * @param  array{employee_id: int|null, site_id: int|null}|null  $holder
+     */
+    protected function mergeReturnedQuantityIntoWarehouseLotLocked(
+        Asset $sourceHeldAsset,
+        Asset $targetWarehouseLot,
+        float $returnQuantity,
+        float $heldQuantity,
+        int $warehouseId,
+        AssetCondition $conditionIn,
+        mixed $endedAt,
+        ?int $performedBy,
+        ?string $note,
+        array $attachments,
+        ?array $holder,
+    ): AssetMovement {
+        $sourceCost = (float) ($sourceHeldAsset->cost ?? 0);
+        $returnedCost = $this->allocateProportionalCost($sourceCost, $heldQuantity, $returnQuantity);
+        $mergedCondition = (float) $targetWarehouseLot->quantity > 0
+            ? $this->worstCondition($targetWarehouseLot->condition, $conditionIn)
+            : $conditionIn;
+
+        $targetWarehouseLot->allowServiceCostAdjustment = true;
+        $targetWarehouseLot->update([
+            'status'       => AssetStatus::Available,
+            'warehouse_id' => $warehouseId,
+            'condition'    => $mergedCondition,
+            'quantity'     => round((float) $targetWarehouseLot->quantity + $returnQuantity, 4),
+            'cost'         => round((float) $targetWarehouseLot->cost + $returnedCost, 2),
+        ]);
+
+        $movement = AssetMovement::query()->create([
+            'company_id'           => $sourceHeldAsset->company_id,
+            'asset_id'             => $targetWarehouseLot->id,
+            'type'                 => MovementType::Returned,
+            'quantity'             => $returnQuantity,
+            'reference_type'       => $sourceHeldAsset->id !== $targetWarehouseLot->id ? $sourceHeldAsset->getMorphClass() : null,
+            'reference_id'         => $sourceHeldAsset->id !== $targetWarehouseLot->id ? $sourceHeldAsset->id : null,
+            'from_employee_id'     => $sourceHeldAsset->current_employee_id,
+            'from_site_id'         => $sourceHeldAsset->current_site_id,
+            'to_warehouse_id'      => $warehouseId,
+            'condition'            => $conditionIn,
+            'occurred_at'          => $endedAt,
+            'performed_by_user_id' => $performedBy,
+            'note'                 => $note,
+            'attachments'          => $attachments ?: null,
+        ]);
+
+        $remainingHeld = round($heldQuantity - $returnQuantity, 4);
+
+        if ($remainingHeld <= 0) {
+            if (filled($sourceHeldAsset->parent_asset_id)) {
+                $this->archiveMergedChildAsset($sourceHeldAsset);
+            } else {
+                $sourceHeldAsset->allowServiceCostAdjustment = true;
+                $sourceHeldAsset->update([
+                    'quantity' => 0,
+                    'cost'     => 0,
+                ]);
+            }
+        } else {
+            $sourceHeldAsset->allowServiceCostAdjustment = true;
+            $sourceHeldAsset->update([
+                'quantity' => $remainingHeld,
+                'cost'     => max(0, round($sourceCost - $returnedCost, 2)),
+            ]);
+        }
+
+        $this->log(
+            $targetWarehouseLot,
+            'returned',
+            $holder,
+            $note,
+            $conditionIn,
+        );
+
+        return $movement;
+    }
+
+    protected function archiveMergedChildAsset(Asset $depletedChild): void
+    {
+        $depletedChild->allowServiceCostAdjustment = true;
+
+        Asset::withoutEvents(function () use ($depletedChild): void {
+            $depletedChild->update([
+                'quantity'            => 0,
+                'cost'                => 0,
+                'warehouse_id'        => null,
+                'current_employee_id' => null,
+                'current_site_id'     => null,
+                'issued_at'           => null,
+                'expected_return_at'  => null,
+                'custody_note'        => null,
+            ]);
+
+            $depletedChild->delete();
         });
     }
 
@@ -592,6 +1186,10 @@ class AssetCustodyService
 
             if (! $product) {
                 $this->fail('product_id', 'product-required');
+            }
+
+            if ($product->isQuantityTracked()) {
+                $this->fail('product_id', 'bulk-unit-only');
             }
 
             $mode = $this->bulkMode($data);
@@ -844,6 +1442,31 @@ class AssetCustodyService
                 $this->fail('status', 'terminal');
             }
 
+            $isQuantityTracked = $asset->isQuantityTracked();
+            $currentQuantity = (float) ($asset->quantity ?? 1);
+            $terminateQuantity = ($isQuantityTracked && filled($data['quantity'] ?? null))
+                ? (float) $data['quantity']
+                : $currentQuantity;
+
+            if ($isQuantityTracked) {
+                if ($currentQuantity <= 0) {
+                    $this->fail('asset', 'asset-not-available');
+                }
+
+                if ($terminateQuantity <= 0) {
+                    $this->fail('quantity', 'quantity-must-be-positive');
+                }
+
+                if ($terminateQuantity > $currentQuantity) {
+                    $this->fail('quantity', 'insufficient-consumable-quantity', [
+                        'requested' => $terminateQuantity,
+                        'available' => $currentQuantity,
+                    ]);
+                }
+            } else {
+                $terminateQuantity = 1.0;
+            }
+
             $endedAt = $data['ended_at'] ?? $data['occurred_at'] ?? now();
 
             if ($asset->status === AssetStatus::Held) {
@@ -868,25 +1491,83 @@ class AssetCustodyService
 
             $condition = $movementType === MovementType::Scrapped ? AssetCondition::Damaged : $asset->condition;
             $note = $data['note'] ?? $data['return_note'] ?? null;
+            $performedBy = $data['performed_by_user_id'] ?? $data['ended_by_user_id'] ?? Auth::id();
+            $fromWarehouseId = $asset->warehouse_id;
+            $fromEmployeeId = $asset->current_employee_id;
+            $fromSiteId = $asset->current_site_id;
+            $holder = ($fromEmployeeId || $fromSiteId) ? [
+                'employee_id' => $fromEmployeeId,
+                'site_id'     => $fromSiteId,
+            ] : null;
+
+            if ($isQuantityTracked && $terminateQuantity < $currentQuantity) {
+                $sourceCost = (float) ($asset->cost ?? 0);
+                $terminatedCost = $this->allocateProportionalCost($sourceCost, $currentQuantity, $terminateQuantity);
+
+                $asset->allowServiceCostAdjustment = true;
+                $asset->update([
+                    'quantity' => round($currentQuantity - $terminateQuantity, 4),
+                    'cost'     => max(0, round($sourceCost - $terminatedCost, 2)),
+                ]);
+
+                $terminatedAsset = Asset::query()->create([
+                    'company_id'          => $asset->company_id,
+                    'product_id'          => $asset->product_id,
+                    'parent_asset_id'     => $asset->parent_asset_id ?? $asset->id,
+                    'warehouse_id'        => null,
+                    'current_employee_id' => null,
+                    'current_site_id'     => null,
+                    'status'              => $status,
+                    'condition'           => $condition,
+                    'initial_quantity'    => 0,
+                    'quantity'            => $terminateQuantity,
+                    'purchase_date'       => $asset->purchase_date,
+                    'warranty_until'      => $asset->warranty_until,
+                    'cost'                => $terminatedCost,
+                    'note'                => $note,
+                    'creator_id'          => $performedBy,
+                ]);
+
+                $movement = AssetMovement::query()->create([
+                    'company_id'           => $asset->company_id,
+                    'asset_id'             => $terminatedAsset->id,
+                    'type'                 => $movementType,
+                    'quantity'             => $terminateQuantity,
+                    'reference_type'       => $asset->getMorphClass(),
+                    'reference_id'         => $asset->id,
+                    'from_warehouse_id'    => $fromWarehouseId,
+                    'from_employee_id'     => $fromEmployeeId,
+                    'from_site_id'         => $fromSiteId,
+                    'condition'            => $condition,
+                    'occurred_at'          => $endedAt,
+                    'performed_by_user_id' => $performedBy,
+                    'note'                 => $note,
+                    'attachments'          => $attachments ?: null,
+                ]);
+
+                $this->log($terminatedAsset, $chatterKey, $holder, $note);
+
+                return $movement;
+            }
 
             $movement = AssetMovement::query()->create([
                 'company_id'           => $asset->company_id,
                 'asset_id'             => $asset->id,
                 'type'                 => $movementType,
-                'quantity'             => $asset->quantity ?? 1,
-                'from_warehouse_id'    => $asset->warehouse_id,
-                'from_employee_id'     => $asset->current_employee_id,
-                'from_site_id'         => $asset->current_site_id,
+                'quantity'             => $terminateQuantity,
+                'from_warehouse_id'    => $fromWarehouseId,
+                'from_employee_id'     => $fromEmployeeId,
+                'from_site_id'         => $fromSiteId,
                 'condition'            => $condition,
                 'occurred_at'          => $endedAt,
-                'performed_by_user_id' => $data['performed_by_user_id'] ?? $data['ended_by_user_id'] ?? Auth::id(),
+                'performed_by_user_id' => $performedBy,
                 'note'                 => $note,
                 'attachments'          => $attachments ?: null,
             ]);
 
             $asset->update([
                 'status'              => $status,
-                'quantity'            => $asset->isConsumable() ? 0 : 1,
+                'quantity'            => $terminateQuantity,
                 'condition'           => $condition,
                 'warehouse_id'        => null,
                 'current_employee_id' => null,
@@ -895,11 +1576,6 @@ class AssetCustodyService
                 'expected_return_at'  => null,
                 'custody_note'        => null,
             ]);
-
-            $holder = ($movement->from_employee_id || $movement->from_site_id) ? [
-                'employee_id' => $movement->from_employee_id,
-                'site_id'     => $movement->from_site_id,
-            ] : null;
 
             $this->log($asset, $chatterKey, $holder, $note);
 
@@ -1164,5 +1840,34 @@ class AssetCustodyService
         }
 
         throw ValidationException::withMessages($messages);
+    }
+
+    protected function allocateProportionalCost(float $sourceCost, float $sourceQuantity, float $allocatedQuantity): float
+    {
+        if ($sourceCost <= 0 || $sourceQuantity <= 0 || $allocatedQuantity <= 0) {
+            return 0.0;
+        }
+
+        if ($allocatedQuantity >= $sourceQuantity) {
+            return round($sourceCost, 2);
+        }
+
+        return round($sourceCost * ($allocatedQuantity / $sourceQuantity), 2);
+    }
+
+    protected function worstCondition(?AssetCondition $first, ?AssetCondition $second): AssetCondition
+    {
+        $severity = [
+            AssetCondition::New->value     => 1,
+            AssetCondition::Good->value    => 2,
+            AssetCondition::Fair->value    => 3,
+            AssetCondition::Poor->value    => 4,
+            AssetCondition::Damaged->value => 5,
+        ];
+
+        $first ??= AssetCondition::New;
+        $second ??= AssetCondition::New;
+
+        return ($severity[$second->value] ?? 1) > ($severity[$first->value] ?? 1) ? $second : $first;
     }
 }

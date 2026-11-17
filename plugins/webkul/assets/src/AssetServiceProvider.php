@@ -50,6 +50,7 @@ class AssetServiceProvider extends PackageServiceProvider
                 '2026_03_20_000002_create_assets_table',
                 '2026_03_20_000003_create_asset_assignments_table',
                 '2026_11_03_000001_add_consumable_quantities_to_assets_tables',
+                '2026_11_04_000001_add_tracking_mode_and_parent_asset_to_assets_tables',
             ])
             ->runsMigrations()
             ->hasSettings([

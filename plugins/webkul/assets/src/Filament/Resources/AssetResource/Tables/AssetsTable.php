@@ -27,9 +27,11 @@ use Webkul\Asset\Enums\AssetCondition;
 use Webkul\Asset\Enums\AssetProductType;
 use Webkul\Asset\Enums\AssetSiteUsage;
 use Webkul\Asset\Enums\AssetStatus;
+use Webkul\Asset\Enums\AssetTrackingMode;
 use Webkul\Asset\Filament\Exports\AssetExporter;
 use Webkul\Asset\Filament\Resources\AssetResource;
 use Webkul\Asset\Filament\Resources\AssetResource\Actions\IssueAssetAction;
+use Webkul\Asset\Filament\Resources\AssetResource\Actions\PrintAssetLabelsAction;
 use Webkul\Asset\Filament\Resources\AssetResource\Actions\ReturnAssetAction;
 use Webkul\Asset\Filament\Resources\AssetResource\Actions\TerminateAssetAction;
 use Webkul\Asset\Filament\Resources\AssetResource\Actions\TransferAssetAction;
@@ -42,6 +44,10 @@ class AssetsTable
     public static function configure(Table $table): Table
     {
         return $table
+            ->modifyQueryUsing(fn (Builder $query): Builder => $query->whereNot(fn (Builder $q) => $q
+                ->whereNull('parent_asset_id')
+                ->where('status', AssetStatus::Available)
+                ->where('quantity', '<=', 0)))
             ->extraAttributes(['class' => 'fi-ta-sticky-scroll'])
             ->defaultSort('created_at', 'desc')
             ->defaultPaginationPageOption(25)
@@ -61,6 +67,11 @@ class AssetsTable
 
                 TextColumn::make('product.type')
                     ->label(__('assets::filament/resources/asset.table.columns.product-type'))
+                    ->badge()
+                    ->toggleable(),
+
+                TextColumn::make('product.tracking_mode')
+                    ->label(__('assets::filament/resources/asset.table.columns.tracking-mode'))
                     ->badge()
                     ->toggleable(),
 
@@ -87,7 +98,15 @@ class AssetsTable
 
                 TextColumn::make('quantity')
                     ->label(__('assets::filament/resources/asset.table.columns.quantity'))
-                    ->numeric(decimalPlaces: 0)
+                    ->formatStateUsing(function (mixed $state, Asset $record): string {
+                        $qty = Asset::formatQuantity($state);
+
+                        if ($record->isQuantityTracked() && blank($record->parent_asset_id) && (float) $record->initial_quantity > 0) {
+                            return "{$qty} / ".Asset::formatQuantity($record->initial_quantity);
+                        }
+
+                        return $qty;
+                    })
                     ->sortable(),
 
                 TextColumn::make('status')
@@ -169,6 +188,13 @@ class AssetsTable
                     ->options(AssetProductType::class)
                     ->query(fn (Builder $query, array $data): Builder => filled($data['value'] ?? null)
                         ? $query->whereHas('product', fn (Builder $q) => $q->where('type', $data['value']))
+                        : $query),
+
+                SelectFilter::make('tracking_mode')
+                    ->label(__('assets::filament/resources/asset.table.filters.tracking-mode'))
+                    ->options(AssetTrackingMode::class)
+                    ->query(fn (Builder $query, array $data): Builder => filled($data['value'] ?? null)
+                        ? $query->whereHas('product', fn (Builder $q) => $q->where('tracking_mode', $data['value']))
                         : $query),
 
                 SelectFilter::make('status')
@@ -255,6 +281,7 @@ class AssetsTable
                     IssueAssetAction::make(),
                     TransferAssetAction::make(),
                     ReturnAssetAction::make(),
+                    PrintAssetLabelsAction::make(),
                     TerminateAssetAction::make('scrap', AssetStatus::Scrapped),
                     TerminateAssetAction::make('markLost', AssetStatus::Lost),
                     RestoreAction::make(),
@@ -288,6 +315,7 @@ class AssetsTable
             ])
             ->toolbarActions([
                 BulkActionGroup::make([
+                    PrintAssetLabelsAction::makeBulk(),
                     DeleteBulkAction::make()
                         ->using(function (Collection $records, DeleteBulkAction $action): void {
                             try {

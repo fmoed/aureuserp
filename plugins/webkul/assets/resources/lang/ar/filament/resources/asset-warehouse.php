@@ -100,7 +100,7 @@ return [
         'warehouse-assets' => [
             'title'   => 'الأصول المحفوظة',
             'columns' => [
-                'asset-tag'     => 'وسم الأصل',
+                'asset-tag'     => 'رمز الأصل',
                 'asset-name'    => 'اسم الأصل',
                 'product'       => 'المنتج',
                 'model'         => 'الموديل',

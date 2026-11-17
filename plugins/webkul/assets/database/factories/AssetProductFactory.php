@@ -3,6 +3,8 @@
 namespace Webkul\Asset\Database\Factories;
 
 use Illuminate\Database\Eloquent\Factories\Factory;
+use Webkul\Asset\Enums\AssetProductType;
+use Webkul\Asset\Enums\AssetTrackingMode;
 use Webkul\Asset\Models\AssetCategory;
 use Webkul\Asset\Models\AssetProduct;
 use Webkul\Security\Models\User;
@@ -20,15 +22,33 @@ class AssetProductFactory extends Factory
     public function definition(): array
     {
         return [
-            'category_id' => fn () => AssetCategory::withoutGlobalScopes()->whereNull('company_id')->value('id')
+            'category_id'   => fn () => AssetCategory::withoutGlobalScopes()->whereNull('company_id')->value('id')
                 ?? AssetCategory::factory()->create(['company_id' => null])->id,
-            'name'        => fake()->unique()->words(3, true),
-            'model'       => strtoupper(fake()->bothify('MDL-####')),
-            'cost'        => fake()->randomFloat(2, 100, 5000),
-            'is_active'   => true,
-            'note'        => null,
-            'creator_id'  => User::query()->value('id') ?? User::factory(),
+            'type'          => AssetProductType::Asset,
+            'tracking_mode' => AssetTrackingMode::Unit,
+            'name'          => fake()->unique()->words(3, true),
+            'model'         => strtoupper(fake()->bothify('MDL-####')),
+            'cost'          => fake()->randomFloat(2, 100, 5000),
+            'is_active'     => true,
+            'note'          => null,
+            'creator_id'    => User::query()->value('id') ?? User::factory(),
         ];
+    }
+
+    public function consumable(): static
+    {
+        return $this->state(fn () => [
+            'type'          => AssetProductType::Consumable,
+            'tracking_mode' => AssetTrackingMode::Quantity,
+        ]);
+    }
+
+    public function quantityTracked(): static
+    {
+        return $this->state(fn () => [
+            'type'          => AssetProductType::Asset,
+            'tracking_mode' => AssetTrackingMode::Quantity,
+        ]);
     }
 
     public function inactive(): static

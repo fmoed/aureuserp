@@ -27,6 +27,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Webkul\Asset\Enums\AssetProductType;
 use Webkul\Asset\Enums\AssetStatus;
+use Webkul\Asset\Enums\AssetTrackingMode;
 use Webkul\Asset\Filament\Exports\AssetProductExporter;
 use Webkul\Asset\Filament\Resources\ProductResource;
 use Webkul\Asset\Models\AssetCategory;
@@ -52,6 +53,12 @@ class ProductsTable
                     ->label(__('assets::filament/resources/product.table.columns.type'))
                     ->badge()
                     ->sortable(),
+
+                TextColumn::make('tracking_mode')
+                    ->label(__('assets::filament/resources/product.table.columns.tracking-mode'))
+                    ->badge()
+                    ->sortable()
+                    ->toggleable(),
 
                 TextColumn::make('category.full_name')
                     ->label(__('assets::filament/resources/product.table.columns.category'))
@@ -81,7 +88,9 @@ class ProductsTable
 
                 TextColumn::make('available_assets_count')
                     ->label(__('assets::filament/resources/product.table.columns.available-assets-count'))
-                    ->sum(['assets as available_assets_count' => fn (Builder $query) => $query->where('status', AssetStatus::Available)], 'quantity')
+                    ->sum(['assets as available_assets_count' => fn (Builder $query) => $query
+                        ->where('status', AssetStatus::Available)
+                        ->where('quantity', '>', 0)], 'quantity')
                     ->numeric(decimalPlaces: 0)
                     ->default(0)
                     ->sortable()
@@ -99,7 +108,9 @@ class ProductsTable
 
                 TextColumn::make('terminated_assets_count')
                     ->label(__('assets::filament/resources/product.table.columns.terminated-assets-count'))
-                    ->counts(['assets as terminated_assets_count' => fn (Builder $query) => $query->whereIn('status', [AssetStatus::Scrapped, AssetStatus::Lost])])
+                    ->sum(['assets as terminated_assets_count' => fn (Builder $query) => $query->whereIn('status', [AssetStatus::Scrapped, AssetStatus::Lost])], 'quantity')
+                    ->numeric(decimalPlaces: 0)
+                    ->default(0)
                     ->sortable()
                     ->badge()
                     ->color('danger')
@@ -149,6 +160,10 @@ class ProductsTable
                 SelectFilter::make('type')
                     ->label(__('assets::filament/resources/product.table.filters.type'))
                     ->options(AssetProductType::class),
+
+                SelectFilter::make('tracking_mode')
+                    ->label(__('assets::filament/resources/product.table.filters.tracking-mode'))
+                    ->options(AssetTrackingMode::class),
 
                 SelectFilter::make('category_id')
                     ->label(__('assets::filament/resources/product.table.filters.category'))

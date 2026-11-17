@@ -6,6 +6,7 @@ use Filament\Actions\Action;
 use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
@@ -38,6 +39,17 @@ class ReturnAssetAction
             ->modalDescription(__('assets::filament/resources/asset.actions.return.modal.description'))
             ->modalSubmitActionLabel(__('assets::filament/resources/asset.actions.return.modal.submit'))
             ->schema([
+                TextInput::make('quantity')
+                    ->label(__('assets::filament/resources/asset.actions.return.fields.quantity'))
+                    ->helperText(__('assets::filament/resources/asset.actions.return.fields.quantity-help'))
+                    ->numeric()
+                    ->integer()
+                    ->minValue(1)
+                    ->maxValue(fn (Asset $record): float => (float) $record->quantity)
+                    ->default(fn (Asset $record): int => max(1, (int) $record->quantity))
+                    ->visible(fn (Asset $record): bool => $record->isQuantityTrackedAsset() && (float) $record->quantity > 1)
+                    ->required(fn (Asset $record): bool => $record->isQuantityTrackedAsset() && (float) $record->quantity > 1),
+
                 Select::make('condition_in')
                     ->label(__('assets::filament/resources/asset.actions.return.fields.condition-in'))
                     ->options(AssetCondition::class)

@@ -15,5 +15,9 @@ return [
     'company'  => [
         'immutable' => 'Cannot change company for an asset that is held or has custody history.',
     ],
-    'product-type-immutable' => 'The product type cannot be changed because asset or batch records already exist for this product.',
+    'product-type-immutable'       => 'The product type cannot be changed because asset or batch records already exist for this product.',
+    'terminal-status-irreversible' => 'Terminal asset statuses such as Scrapped, Lost, or Consumed cannot be reversed directly.',
+    'product-immutable'            => 'The asset product cannot be changed after operational custody movements have been recorded.',
+    'cost-immutable'               => 'Historical acquisition cost cannot be edited once operational movements exist.',
+    'initial-quantity-immutable'   => 'Initial registered quantity cannot be changed once operational movements exist.',
 ];

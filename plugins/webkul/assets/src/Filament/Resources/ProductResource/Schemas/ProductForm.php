@@ -2,6 +2,7 @@
 
 namespace Webkul\Asset\Filament\Resources\ProductResource\Schemas;
 
+use Filament\Forms\Components\Radio;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -14,6 +15,7 @@ use Filament\Schemas\Schema;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Webkul\Asset\Enums\AssetProductType;
+use Webkul\Asset\Enums\AssetTrackingMode;
 use Webkul\Asset\Filament\Resources\AssetCategoryResource\Schemas\AssetCategoryForm;
 use Webkul\Asset\Filament\Resources\ProductResource;
 use Webkul\Asset\Models\Asset;
@@ -37,6 +39,45 @@ class ProductForm
                                     ->autofocus()
                                     ->extraInputAttributes(['style' => 'font-size: 1.5rem;height: 3rem;'])
                                     ->columnSpanFull(),
+
+                                Radio::make('type')
+                                    ->label(__('assets::filament/resources/product.form.sections.general.fields.type'))
+                                    ->options(AssetProductType::class)
+                                    ->descriptions(AssetProductType::descriptions())
+                                    ->default(AssetProductType::Asset->value)
+                                    ->required()
+                                    ->live()
+                                    ->columns(2)
+                                    ->columnSpanFull()
+                                    ->afterStateUpdated(function (Set $set, mixed $state): void {
+                                        $typeValue = $state instanceof AssetProductType ? $state->value : $state;
+
+                                        $set(
+                                            'tracking_mode',
+                                            $typeValue === AssetProductType::Consumable->value
+                                                ? AssetTrackingMode::Quantity->value
+                                                : AssetTrackingMode::Unit->value,
+                                        );
+                                    })
+                                    ->disabled(fn (?Model $record): bool => static::isReferenced($record))
+                                    ->dehydrated(),
+
+                                Radio::make('tracking_mode')
+                                    ->label(__('assets::filament/resources/product.form.sections.general.fields.tracking-mode'))
+                                    ->options(AssetTrackingMode::class)
+                                    ->descriptions(AssetTrackingMode::descriptions())
+                                    ->default(AssetTrackingMode::Unit->value)
+                                    ->required()
+                                    ->columns(2)
+                                    ->columnSpanFull()
+                                    ->visible(function (Get $get): bool {
+                                        $type = $get('type');
+                                        $typeValue = $type instanceof AssetProductType ? $type->value : $type;
+
+                                        return blank($typeValue) || $typeValue === AssetProductType::Asset->value;
+                                    })
+                                    ->disabled(fn (?Model $record): bool => static::isReferenced($record))
+                                    ->dehydrated(),
 
                                 Select::make('category_id')
                                     ->label(__('assets::filament/resources/product.form.sections.general.fields.category'))
@@ -62,18 +103,6 @@ class ProductForm
                                     ->editOptionAction(fn ($action, Select $component) => $action
                                         ->visible(fn (): bool => filled($component->getState()) && (bool) auth()->user()?->can('update_asset_product'))
                                         ->authorize(fn (): bool => filled($component->getState()) && (bool) auth()->user()?->can('update_asset_product'))),
-
-                                Select::make('type')
-                                    ->label(__('assets::filament/resources/product.form.sections.general.fields.type'))
-                                    ->options(AssetProductType::class)
-                                    ->default(AssetProductType::Asset->value)
-                                    ->required()
-                                    ->live()
-                                    ->helperText(fn (Get $get): string => ($get('type') === AssetProductType::Consumable || $get('type') === AssetProductType::Consumable->value)
-                                        ? __('assets::filament/resources/product.form.sections.general.fields.type-consumable-hint')
-                                        : __('assets::filament/resources/product.form.sections.general.fields.type-asset-hint'))
-                                    ->disabled(fn (?Model $record): bool => static::isReferenced($record))
-                                    ->dehydrated(),
 
                                 TextInput::make('model')
                                     ->label(__('assets::filament/resources/product.form.sections.general.fields.model'))

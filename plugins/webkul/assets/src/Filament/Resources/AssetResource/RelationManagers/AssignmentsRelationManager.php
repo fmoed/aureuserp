@@ -16,6 +16,7 @@ use Webkul\Asset\Filament\Exports\AssetMovementExporter;
 use Webkul\Asset\Filament\Resources\AssetMovementResource;
 use Webkul\Asset\Filament\Resources\AssetResource;
 use Webkul\Asset\Models\Asset;
+use Webkul\Asset\Models\AssetMovement;
 
 class AssignmentsRelationManager extends RelationManager
 {
@@ -43,10 +44,24 @@ class AssignmentsRelationManager extends RelationManager
     public function table(Table $table): Table
     {
         $owner = $this->getOwnerRecord();
+        $isRootQuantityLot = $owner instanceof Asset && $owner->isQuantityTracked() && blank($owner->parent_asset_id);
 
         return $table
+            ->query(function () use ($owner, $isRootQuantityLot): ?Builder {
+                if (! $isRootQuantityLot) {
+                    return null;
+                }
+
+                $childIds = Asset::withoutGlobalScopes()
+                    ->withTrashed()
+                    ->where('parent_asset_id', $owner->id)
+                    ->pluck('id');
+
+                return AssetMovement::query()
+                    ->whereIn('asset_id', $childIds->push($owner->id)->unique()->values()->all());
+            })
             ->extraAttributes(['class' => 'fi-ta-sticky-scroll'])
-            ->modifyQueryUsing(fn (Builder $query) => $query->with(['fromWarehouse', 'fromEmployee', 'fromSite', 'toWarehouse', 'toEmployee', 'toSite', 'performedBy']))
+            ->modifyQueryUsing(fn (Builder $query) => $query->with(['asset:id,asset_tag', 'fromWarehouse', 'fromEmployee', 'fromSite', 'toWarehouse', 'toEmployee', 'toSite', 'performedBy']))
             ->defaultSort('occurred_at', 'desc')
             ->defaultPaginationPageOption(25)
             ->paginationPageOptions([10, 25, 50, 100])
@@ -56,13 +71,20 @@ class AssignmentsRelationManager extends RelationManager
                     ->dateTime()
                     ->sortable(),
 
+                TextColumn::make('asset.asset_tag')
+                    ->label(__('assets::filament/resources/asset-movement.table.columns.asset-tag'))
+                    ->visible($isRootQuantityLot)
+                    ->weight('bold')
+                    ->copyable()
+                    ->toggleable(),
+
                 TextColumn::make('type')
                     ->label(__('assets::filament/resources/asset.relation-manager.assignments.columns.type'))
                     ->badge(),
 
                 TextColumn::make('quantity')
                     ->label(__('assets::filament/resources/asset-movement.table.columns.quantity'))
-                    ->numeric(decimalPlaces: 0)
+                    ->formatStateUsing(fn (mixed $state): string => Asset::formatQuantity($state))
                     ->sortable(),
 
                 TextColumn::make('source_type')
@@ -111,7 +133,7 @@ class AssignmentsRelationManager extends RelationManager
             ->recordActions([
                 ViewAction::make()
                     ->modalHeading(__('assets::filament/resources/asset.relation-manager.assignments.view-modal.heading'))
-                    ->schema(AssetMovementResource::movementModalSchema(includeAsset: false)),
+                    ->schema(AssetMovementResource::movementModalSchema(includeAsset: $isRootQuantityLot)),
             ])
             ->toolbarActions([
                 AssetMovementExporter::configureExportAction(ExportAction::make()

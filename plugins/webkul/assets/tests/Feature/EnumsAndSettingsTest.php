@@ -6,6 +6,7 @@ use Webkul\Asset\Enums\AssetCondition;
 use Webkul\Asset\Enums\AssetProductType;
 use Webkul\Asset\Enums\AssetSourceType;
 use Webkul\Asset\Enums\AssetStatus;
+use Webkul\Asset\Enums\AssetTrackingMode;
 use Webkul\Asset\Enums\MovementType;
 use Webkul\Asset\Settings\AssetSettings;
 
@@ -75,20 +76,30 @@ it('resolves the dedicated consumables issuance settings defaults', function () 
         ->and($settings->require_attachments_on_consumable_issue)->toBeFalse();
 });
 
-it('provides concise parenthesis-free labels for AssetProductType and Consumed status across locales', function () {
+it('provides concise parenthesis-free labels for AssetProductType, AssetTrackingMode, and statuses across locales', function () {
     app()->setLocale('ar');
-    expect(AssetProductType::Asset->getLabel())->toBe('أصل')
-        ->and(AssetProductType::Consumable->getLabel())->toBe('مستهلكات')
+    expect(AssetProductType::Asset->getLabel())->toBe('أصل مستديم')
+        ->and(AssetProductType::Consumable->getLabel())->toBe('صنف مستهلك')
+        ->and(AssetStatus::Held->getLabel())->toBe('في العهدة')
         ->and(AssetStatus::Consumed->getLabel())->toBe('مصروف بالكامل');
 
     app()->setLocale('en');
-    expect(AssetProductType::Asset->getLabel())->toBe('Asset')
+    expect(AssetProductType::Asset->getLabel())->toBe('Durable Asset')
         ->and(AssetProductType::Consumable->getLabel())->toBe('Consumable')
+        ->and(AssetStatus::Held->getLabel())->toBe('In Use')
         ->and(AssetStatus::Consumed->getLabel())->toBe('Consumed');
 
     foreach (['ar', 'en', 'es', 'fr', 'pt_BR'] as $locale) {
         app()->setLocale($locale);
         expect(AssetProductType::Asset->getLabel())->not->toContain('(')
-            ->and(AssetProductType::Consumable->getLabel())->not->toContain('(');
+            ->and(AssetProductType::Consumable->getLabel())->not->toContain('(')
+            ->and(AssetProductType::Asset->getDescription())->not->toBeEmpty()
+            ->and(AssetProductType::Consumable->getDescription())->not->toBeEmpty()
+            ->and(AssetTrackingMode::Unit->getLabel())->not->toContain('(')
+            ->and(AssetTrackingMode::Quantity->getLabel())->not->toContain('(')
+            ->and(AssetTrackingMode::Unit->getDescription())->not->toBeEmpty()
+            ->and(AssetTrackingMode::Quantity->getDescription())->not->toBeEmpty();
     }
+
+    app()->setLocale('en');
 });

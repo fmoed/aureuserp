@@ -121,7 +121,7 @@ return [
         'site-assets' => [
             'title'   => 'Conteúdo do Local',
             'columns' => [
-                'asset-tag'          => 'Etiqueta do ativo',
+                'asset-tag'          => 'Código do Ativo',
                 'asset-name'         => 'Ativo',
                 'category'           => 'Categoria',
                 'current-site'       => 'Local / Sub-local',

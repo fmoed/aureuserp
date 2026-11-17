@@ -121,7 +121,7 @@ return [
         'site-assets' => [
             'title'   => 'محتويات الموقع',
             'columns' => [
-                'asset-tag'          => 'رقم الأصل',
+                'asset-tag'          => 'رمز الأصل',
                 'asset-name'         => 'الأصل',
                 'category'           => 'الفئة',
                 'current-site'       => 'الموقع / الموقع الفرعي',

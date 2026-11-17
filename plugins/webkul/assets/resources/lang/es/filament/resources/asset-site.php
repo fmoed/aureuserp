@@ -121,7 +121,7 @@ return [
         'site-assets' => [
             'title'   => 'Contenido del sitio',
             'columns' => [
-                'asset-tag'          => 'Etiqueta de activo',
+                'asset-tag'          => 'Código del Activo',
                 'asset-name'         => 'Activo',
                 'category'           => 'Categoría',
                 'current-site'       => 'Ubicación / Subsitio',

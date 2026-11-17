@@ -16,6 +16,7 @@ return [
                     'name'                 => 'Nom du Produit',
                     'category'             => 'Catégorie',
                     'type'                 => 'Type de Produit',
+                    'tracking-mode'        => 'Mode de Suivi',
                     'type-asset-hint'      => 'Une unité suivie identifiée par un numéro de série et un détenteur.',
                     'type-consumable-hint' => 'Un lot de quantité émis par unités sans suivi de retour.',
                     'model'                => 'Modèle',
@@ -39,13 +40,14 @@ return [
             'general' => [
                 'title'   => 'Informations Générales',
                 'entries' => [
-                    'name'      => 'Nom du Produit',
-                    'category'  => 'Catégorie',
-                    'type'      => 'Type de Produit',
-                    'model'     => 'Modèle',
-                    'cost'      => 'Coût Standard',
-                    'is-active' => 'Actif',
-                    'note'      => 'Description / Spécifications',
+                    'name'          => 'Nom du Produit',
+                    'category'      => 'Catégorie',
+                    'type'          => 'Type de Produit',
+                    'tracking-mode' => 'Mode de Suivi',
+                    'model'         => 'Modèle',
+                    'cost'          => 'Coût Standard',
+                    'is-active'     => 'Actif',
+                    'note'          => 'Description / Spécifications',
                 ],
             ],
 
@@ -72,6 +74,7 @@ return [
             'name'                    => 'Nom du Produit',
             'category'                => 'Catégorie',
             'type'                    => 'Type de Produit',
+            'tracking-mode'           => 'Mode de Suivi',
             'model'                   => 'Modèle',
             'cost'                    => 'Coût',
             'assets-count'            => 'Actifs Enregistrés',
@@ -91,16 +94,24 @@ return [
         ],
 
         'filters' => [
-            'category'  => 'Catégorie',
-            'type'      => 'Type de Produit',
-            'is-active' => 'Actif',
-            'company'   => 'Société',
+            'category'      => 'Catégorie',
+            'type'          => 'Type de Produit',
+            'tracking-mode' => 'Mode de Suivi',
+            'is-active'     => 'Actif',
+            'company'       => 'Société',
         ],
     ],
 
     'views' => [
-        'active'   => 'Produits Actifs',
-        'archived' => 'Produits Archivés',
+        'active'          => 'Produits Actifs',
+        'durable-assets'  => 'Actifs Durables',
+        'quantity-assets' => 'Actifs par Quantité',
+        'consumables'     => 'Consommables',
+        'archived'        => 'Produits Archivés',
+    ],
+
+    'validation' => [
+        'cannot-change-tracking-mode-with-assets' => 'Le mode de suivi ne peut pas être modifié après l\'enregistrement d\'actifs pour ce produit.',
     ],
 
     'relation-manager' => [

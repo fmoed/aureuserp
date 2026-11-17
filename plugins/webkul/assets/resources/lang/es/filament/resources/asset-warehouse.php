@@ -100,7 +100,7 @@ return [
         'warehouse-assets' => [
             'title'   => 'Activos almacenados',
             'columns' => [
-                'asset-tag'     => 'Etiqueta del activo',
+                'asset-tag'     => 'Código del Activo',
                 'asset-name'    => 'Nombre del activo',
                 'product'       => 'Producto',
                 'model'         => 'Modelo',

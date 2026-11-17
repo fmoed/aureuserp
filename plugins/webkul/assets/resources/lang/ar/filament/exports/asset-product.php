@@ -9,7 +9,7 @@ return [
         'cost'                    => 'التكلفة',
         'assets-count'            => 'الوحدات المسجلة',
         'available-assets-count'  => 'المتاح بالمخازن',
-        'held-assets-count'       => 'المصروف كعهدة',
+        'held-assets-count'       => 'في العهدة',
         'terminated-assets-count' => 'المتلف / المفقود',
         'total-cost'              => 'إجمالي القيمة المالية',
         'is-active'               => 'نشط',

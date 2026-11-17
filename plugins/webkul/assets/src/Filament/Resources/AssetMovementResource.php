@@ -24,6 +24,7 @@ use Webkul\Asset\Enums\AssetSourceType;
 use Webkul\Asset\Enums\MovementType;
 use Webkul\Asset\Filament\Exports\AssetMovementExporter;
 use Webkul\Asset\Filament\Resources\AssetMovementResource\Pages\ListAssetMovements;
+use Webkul\Asset\Models\Asset;
 use Webkul\Asset\Models\AssetCategory;
 use Webkul\Asset\Models\AssetMovement;
 use Webkul\Asset\Models\AssetSite;
@@ -107,7 +108,7 @@ class AssetMovementResource extends Resource
 
                 TextColumn::make('quantity')
                     ->label(__('assets::filament/resources/asset-movement.table.columns.quantity'))
-                    ->numeric(decimalPlaces: 0)
+                    ->formatStateUsing(fn (mixed $state): string => Asset::formatQuantity($state))
                     ->sortable()
                     ->summarize(Sum::make()),
 
@@ -339,7 +340,7 @@ class AssetMovementResource extends Resource
 
                     TextEntry::make('quantity')
                         ->label(__('assets::filament/resources/asset-movement.table.columns.quantity'))
-                        ->numeric(decimalPlaces: 0),
+                        ->formatStateUsing(fn (mixed $state): string => Asset::formatQuantity($state)),
 
                     TextEntry::make('source_type')
                         ->label(__('assets::filament/resources/asset-movement.table.columns.source-type'))
@@ -383,7 +384,8 @@ class AssetMovementResource extends Resource
                 ->schema([
                     FileUpload::make('attachments')
                         ->label(__('assets::filament/resources/asset-movement.table.columns.attachments'))
-                        ->disk('public')
+                        ->disk('local')
+                        ->visibility('private')
                         ->multiple()
                         ->disabled()
                         ->dehydrated(false)

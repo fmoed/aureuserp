@@ -34,13 +34,25 @@ class IssueAssetAction
                 && (bool) auth()->user()?->can('issue', $record))
             ->authorize(fn (Asset $record): bool => (bool) auth()->user()?->can('issue', $record))
             ->modalHeading(__('assets::filament/resources/asset.actions.issue.modal.heading'))
-            ->modalDescription(fn (Asset $record): string => $record->isConsumable()
-                ? __('assets::filament/resources/asset.actions.issue.modal.consumable-description', ['quantity' => (float) $record->quantity])
-                : __('assets::filament/resources/asset.actions.issue.modal.description'))
+            ->modalDescription(function (Asset $record): string {
+                if ($record->isConsumable()) {
+                    return __('assets::filament/resources/asset.actions.issue.modal.consumable-description', ['quantity' => (float) $record->quantity]);
+                }
+
+                if ($record->isQuantityTracked()) {
+                    return __('assets::filament/resources/asset.actions.issue.modal.quantity-asset-description', ['quantity' => (float) $record->quantity]);
+                }
+
+                return __('assets::filament/resources/asset.actions.issue.modal.description');
+            })
             ->modalSubmitActionLabel(__('assets::filament/resources/asset.actions.issue.modal.submit'))
             ->schema([
                 Hidden::make('selected_consumable')
                     ->default(fn (Asset $record): bool => $record->isConsumable())
+                    ->dehydrated(false),
+
+                Hidden::make('selected_quantity_tracked')
+                    ->default(fn (Asset $record): bool => $record->isQuantityTracked())
                     ->dehydrated(false),
 
                 ...static::getHolderFields('issue'),
@@ -56,12 +68,16 @@ class IssueAssetAction
                     ->label(__('assets::filament/resources/asset.actions.issue.fields.quantity'))
                     ->helperText(__('assets::filament/resources/asset.actions.issue.fields.quantity-help'))
                     ->numeric()
-                    ->default(fn (): int => max(1, (int) (app(AssetSettings::class)->default_consumable_issue_quantity ?? 1)))
-                    ->minValue(0.01)
+                    ->integer(fn (Asset $record): bool => ! $record->isConsumable())
+                    ->default(fn (Asset $record): int => (int) min(
+                        max(1, (float) $record->quantity),
+                        max(1, (int) (app(AssetSettings::class)->default_consumable_issue_quantity ?? 1)),
+                    ))
+                    ->minValue(fn (Get $get): float|int => (bool) $get('selected_consumable') ? 0.01 : 1)
                     ->maxValue(fn (Asset $record): float => (float) $record->quantity)
                     ->live()
-                    ->visible(fn (Get $get): bool => (bool) $get('selected_consumable'))
-                    ->required(fn (Get $get): bool => (bool) $get('selected_consumable')),
+                    ->visible(fn (Get $get): bool => (bool) ($get('selected_quantity_tracked') ?: $get('selected_consumable')))
+                    ->required(fn (Get $get): bool => (bool) ($get('selected_quantity_tracked') ?: $get('selected_consumable'))),
 
                 DateTimePicker::make('issued_at')
                     ->label(__('assets::filament/resources/asset.actions.issue.fields.issued-at'))

@@ -12,6 +12,7 @@ use Illuminate\Validation\ValidationException;
 use Webkul\Asset\Database\Factories\AssetProductFactory;
 use Webkul\Asset\Enums\AssetProductType;
 use Webkul\Asset\Enums\AssetStatus;
+use Webkul\Asset\Enums\AssetTrackingMode;
 use Webkul\Chatter\Traits\HasChatter;
 use Webkul\Chatter\Traits\HasLogActivity;
 use Webkul\Field\Traits\HasCustomFields;
@@ -33,6 +34,7 @@ class AssetProduct extends Model
         'company_id',
         'category_id',
         'type',
+        'tracking_mode',
         'name',
         'model',
         'cost',
@@ -42,14 +44,32 @@ class AssetProduct extends Model
     ];
 
     protected $casts = [
-        'type'      => AssetProductType::class,
-        'cost'      => 'decimal:4',
-        'is_active' => 'boolean',
+        'type'          => AssetProductType::class,
+        'tracking_mode' => AssetTrackingMode::class,
+        'cost'          => 'decimal:4',
+        'is_active'     => 'boolean',
     ];
 
     public function isConsumable(): bool
     {
         return $this->type === AssetProductType::Consumable;
+    }
+
+    public function isQuantityTracked(): bool
+    {
+        return $this->isConsumable() || $this->tracking_mode === AssetTrackingMode::Quantity;
+    }
+
+    public function isQuantityTrackedAsset(): bool
+    {
+        return $this->type === AssetProductType::Asset
+            && $this->tracking_mode === AssetTrackingMode::Quantity;
+    }
+
+    public function isUnitTrackedAsset(): bool
+    {
+        return $this->type === AssetProductType::Asset
+            && ! $this->isQuantityTrackedAsset();
     }
 
     public function getModelTitle(): string
@@ -79,6 +99,12 @@ class AssetProduct extends Model
                 $product->type = AssetProductType::Asset;
             }
 
+            if ($product->type === AssetProductType::Consumable) {
+                $product->tracking_mode = AssetTrackingMode::Quantity;
+            } elseif (blank($product->tracking_mode)) {
+                $product->tracking_mode = AssetTrackingMode::Unit;
+            }
+
             if (blank($product->company_id)) {
                 throw ValidationException::withMessages([
                     'company_id' => __('assets::services/asset-custody.company-required'),
@@ -93,15 +119,27 @@ class AssetProduct extends Model
         });
 
         static::updating(function (self $product): void {
-            if ($product->isDirty('type')) {
+            if ($product->type === AssetProductType::Consumable) {
+                $product->tracking_mode = AssetTrackingMode::Quantity;
+            } elseif (blank($product->tracking_mode)) {
+                $product->tracking_mode = AssetTrackingMode::Unit;
+            }
+
+            if ($product->isDirty('type') || $product->isDirty('tracking_mode')) {
                 $hasAssets = Asset::withoutGlobalScopes()
                     ->withTrashed()
                     ->where('product_id', $product->id)
                     ->exists();
 
-                if ($hasAssets) {
+                if ($hasAssets && $product->isDirty('type')) {
                     throw ValidationException::withMessages([
                         'type' => __('assets::models/asset.product-type-immutable'),
+                    ]);
+                }
+
+                if ($hasAssets && $product->isDirty('tracking_mode')) {
+                    throw ValidationException::withMessages([
+                        'tracking_mode' => __('assets::filament/resources/product.validation.cannot-change-tracking-mode-with-assets'),
                     ]);
                 }
             }

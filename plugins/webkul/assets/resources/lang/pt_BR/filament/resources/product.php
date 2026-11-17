@@ -16,6 +16,7 @@ return [
                     'name'                 => 'Nome do Produto',
                     'category'             => 'Categoria',
                     'type'                 => 'Tipo de Produto',
+                    'tracking-mode'        => 'Modo de Rastreamento',
                     'type-asset-hint'      => 'Uma unidade rastreada identificada por número de série e responsável.',
                     'type-consumable-hint' => 'Um lote de quantidade emitido por unidades sem controle de devolução.',
                     'model'                => 'Modelo',
@@ -39,13 +40,14 @@ return [
             'general' => [
                 'title'   => 'Informações Gerais',
                 'entries' => [
-                    'name'      => 'Nome do Produto',
-                    'category'  => 'Categoria',
-                    'type'      => 'Tipo de Produto',
-                    'model'     => 'Modelo',
-                    'cost'      => 'Custo Padrão',
-                    'is-active' => 'Ativo',
-                    'note'      => 'Descrição / Especificações',
+                    'name'          => 'Nome do Produto',
+                    'category'      => 'Categoria',
+                    'type'          => 'Tipo de Produto',
+                    'tracking-mode' => 'Modo de Rastreamento',
+                    'model'         => 'Modelo',
+                    'cost'          => 'Custo Padrão',
+                    'is-active'     => 'Ativo',
+                    'note'          => 'Descrição / Especificações',
                 ],
             ],
 
@@ -72,6 +74,7 @@ return [
             'name'                    => 'Nome do Produto',
             'category'                => 'Categoria',
             'type'                    => 'Tipo de Produto',
+            'tracking-mode'           => 'Modo de Rastreamento',
             'model'                   => 'Modelo',
             'cost'                    => 'Custo',
             'assets-count'            => 'Ativos Registrados',
@@ -91,16 +94,24 @@ return [
         ],
 
         'filters' => [
-            'category'  => 'Categoria',
-            'type'      => 'Tipo de Produto',
-            'is-active' => 'Ativo',
-            'company'   => 'Empresa',
+            'category'      => 'Categoria',
+            'type'          => 'Tipo de Produto',
+            'tracking-mode' => 'Modo de Rastreamento',
+            'is-active'     => 'Ativo',
+            'company'       => 'Empresa',
         ],
     ],
 
     'views' => [
-        'active'   => 'Produtos Ativos',
-        'archived' => 'Produtos Arquivados',
+        'active'          => 'Produtos Ativos',
+        'durable-assets'  => 'Ativos Duráveis',
+        'quantity-assets' => 'Ativos por Quantidade',
+        'consumables'     => 'Consumíveis',
+        'archived'        => 'Produtos Arquivados',
+    ],
+
+    'validation' => [
+        'cannot-change-tracking-mode-with-assets' => 'O modo de rastreamento não pode ser alterado após o registro de ativos para este produto.',
     ],
 
     'relation-manager' => [

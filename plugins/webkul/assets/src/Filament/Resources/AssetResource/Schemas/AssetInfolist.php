@@ -32,15 +32,19 @@ class AssetInfolist
                                     ->label(__('assets::filament/resources/asset.form.sections.general.fields.product-type'))
                                     ->badge(),
 
+                                TextEntry::make('product.tracking_mode')
+                                    ->label(__('assets::filament/resources/asset.infolist.sections.identity.entries.tracking-mode'))
+                                    ->badge(),
+
                                 TextEntry::make('initial_quantity')
                                     ->label(__('assets::filament/resources/asset.infolist.sections.custody.entries.initial-quantity'))
-                                    ->numeric(decimalPlaces: 0)
-                                    ->visible(fn (Asset $record): bool => (bool) $record->product?->isConsumable()),
+                                    ->formatStateUsing(fn (mixed $state): string => Asset::formatQuantity($state))
+                                    ->visible(fn (Asset $record): bool => $record->isQuantityTracked() && blank($record->parent_asset_id)),
 
                                 TextEntry::make('quantity')
                                     ->label(__('assets::filament/resources/asset.infolist.sections.custody.entries.available-quantity'))
-                                    ->numeric(decimalPlaces: 0)
-                                    ->visible(fn (Asset $record): bool => (bool) $record->product?->isConsumable()),
+                                    ->formatStateUsing(fn (mixed $state): string => Asset::formatQuantity($state))
+                                    ->visible(fn (Asset $record): bool => $record->isQuantityTracked()),
 
                                 TextEntry::make('asset_tag')
                                     ->label(__('assets::filament/resources/asset.form.sections.general.fields.asset-tag'))
@@ -48,9 +52,15 @@ class AssetInfolist
                                     ->weight(FontWeight::Bold)
                                     ->copyable(),
 
+                                TextEntry::make('parentAsset.asset_tag')
+                                    ->label(__('assets::filament/resources/asset.infolist.sections.identity.entries.parent-asset'))
+                                    ->icon('heroicon-o-arrow-uturn-left')
+                                    ->copyable()
+                                    ->visible(fn (Asset $record): bool => filled($record->parent_asset_id)),
+
                                 TextEntry::make('serial_no')
                                     ->label(__('assets::filament/resources/asset.form.sections.general.fields.serial-no'))
-                                    ->visible(fn (Asset $record): bool => ! (bool) $record->product?->isConsumable())
+                                    ->visible(fn (Asset $record): bool => ! $record->isQuantityTracked())
                                     ->placeholder('—'),
 
                                 TextEntry::make('product.model')

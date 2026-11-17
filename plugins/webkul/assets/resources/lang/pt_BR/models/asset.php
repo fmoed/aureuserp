@@ -15,5 +15,9 @@ return [
     'company'  => [
         'immutable' => 'Não é possível alterar a empresa de um ativo em custódia ou com histórico.',
     ],
-    'product-type-immutable' => 'O tipo de produto não pode ser alterado porque já existem registros de ativos ou lotes para este produto.',
+    'product-type-immutable'       => 'O tipo de produto não pode ser alterado porque já existem registros de ativos ou lotes para este produto.',
+    'terminal-status-irreversible' => 'Os status finais do ativo não podem ser revertidos diretamente.',
+    'product-immutable'            => 'O produto do ativo não pode ser alterado após o registro de movimentações operacionais.',
+    'cost-immutable'               => 'O custo histórico de aquisição não pode ser alterado após a existência de movimentações operacionais.',
+    'initial-quantity-immutable'   => 'A quantidade inicial registrada não pode ser alterada após a existência de movimentações operacionais.',
 ];

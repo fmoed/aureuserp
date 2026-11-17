@@ -19,6 +19,7 @@ use Illuminate\Validation\ValidationException;
 use Webkul\Asset\Enums\AssetCondition;
 use Webkul\Asset\Enums\AssetProductType;
 use Webkul\Asset\Enums\AssetSiteUsage;
+use Webkul\Asset\Enums\AssetTrackingMode;
 use Webkul\Asset\Filament\Resources\AssetResource;
 use Webkul\Asset\Filament\Resources\AssetResource\Actions\Concerns\HasCustodyHolderFields;
 use Webkul\Asset\Filament\Resources\AssetSiteResource;
@@ -82,10 +83,11 @@ class BulkRegisterAssetsAction
                                     ->where(hide_deleted_unless_selected($state))
                                     ->where(fn (Builder $q) => $q->where('is_active', true)->when(filled($state), fn (Builder $sq) => $sq->orWhereKey($state)))
                                     ->where('type', AssetProductType::Asset->value)
+                                    ->where('tracking_mode', AssetTrackingMode::Unit->value)
                                     ->where(owned_by_company($get('company_id'))),
                             )
                             ->getOptionLabelFromRecordUsing(fn (AssetProduct $record): string => $record->name
-                                .($record->model ? " ({$record->model})" : '')
+                                .($record->model ? " — {$record->model}" : '')
                                 .($record->category ? " — {$record->category->full_name}" : '')
                                 .($record->trashed() ? ' (Deleted)' : ''))
                             ->disableOptionWhen(fn ($label): bool => str_contains((string) $label, ' (Deleted)'))

@@ -169,7 +169,7 @@ trait HasCustodyHolderFields
 
     protected static function isBatchConsumableMode(Get $get): bool
     {
-        return (bool) $get('selected_consumable')
+        return (bool) ($get('selected_quantity_tracked') ?: $get('selected_consumable'))
             && (bool) app(AssetSettings::class)->enable_consumables_batch_issue;
     }
 
@@ -271,8 +271,8 @@ trait HasCustodyHolderFields
             ->imageResizeTargetWidth('1600')
             ->imageResizeTargetHeight('1200')
             ->directory('assets/attachments')
-            ->disk('public')
-            ->visibility('public')
+            ->disk('local')
+            ->visibility('private')
             ->downloadable()
             ->openable()
             ->previewable()

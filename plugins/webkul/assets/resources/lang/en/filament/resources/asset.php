@@ -57,6 +57,7 @@ return [
             'name'             => 'Asset Name',
             'product'          => 'Product',
             'product-type'     => 'Product Type',
+            'tracking-mode'    => 'Tracking Mode',
             'quantity'         => 'Quantity',
             'model'            => 'Model',
             'serial-no'        => 'Serial No.',
@@ -97,6 +98,7 @@ return [
             'site-type'           => 'Site Type',
             'product'             => 'Product',
             'product-type'        => 'Product Type',
+            'tracking-mode'       => 'Tracking Mode',
             'company'             => 'Company',
         ],
 
@@ -124,13 +126,25 @@ return [
     ],
 
     'actions' => [
+        'print-labels' => [
+            'label'         => 'Print Labels',
+            'bulk-label'    => 'Print Selected Labels',
+            'modal-heading' => 'Print Barcode Labels',
+            'submit'        => 'Download PDF Labels',
+            'fields'        => [
+                'copies'      => 'Number of Labels',
+                'copies-help' => 'Total barcode sticker copies to print on A4 sheets.',
+            ],
+        ],
+
         'issue' => [
             'label' => 'Issue Custody',
             'modal' => [
-                'heading'                => 'Issue Asset Custody',
-                'description'            => 'Assign this asset to an employee or site.',
-                'consumable-description' => 'Available balance: :quantity units. Quantities are deducted from this batch on issue.',
-                'submit'                 => 'Issue Custody',
+                'heading'                    => 'Issue Asset Custody',
+                'description'                => 'Assign this asset to an employee or site.',
+                'consumable-description'     => 'Available balance: :quantity units. Quantities are deducted from this batch on issue.',
+                'quantity-asset-description' => 'Available balance: :quantity units. Issued quantities remain tracked under returnable custody.',
+                'submit'                     => 'Issue Custody',
             ],
             'fields' => [
                 'allocation-mode'    => 'Allocation Mode',
@@ -167,7 +181,13 @@ return [
                 'description' => 'Transfer this asset to a new employee or site.',
                 'submit'      => 'Transfer Custody',
             ],
+            'sections' => [
+                'assignment' => 'Custody Assignment',
+                'handover'   => 'Handover Documentation',
+            ],
             'fields' => [
+                'quantity'           => 'Quantity to Transfer',
+                'quantity-help'      => 'Transfer partial or full quantity from this custody record.',
                 'allocation-mode'    => 'Allocation Mode',
                 'allocation-modes'   => [
                     'employee-custody' => 'Employee Custody',
@@ -199,6 +219,8 @@ return [
                 'submit'      => 'Confirm Return',
             ],
             'fields' => [
+                'quantity'           => 'Quantity to Return',
+                'quantity-help'      => 'Return partial or full quantity back to the warehouse.',
                 'condition-in'       => 'Condition upon Return',
                 'ended-at'           => 'Return Date & Time',
                 'warehouse'          => 'Receiving Warehouse',
@@ -219,9 +241,11 @@ return [
                 'submit'      => 'Confirm Scrap',
             ],
             'fields' => [
-                'ended-at'    => 'Scrap Date & Time',
-                'note'        => 'Scrap Reason / Note',
-                'attachments' => 'Scrap Attachments',
+                'quantity'      => 'Quantity to Scrap',
+                'quantity-help' => 'Specify how many units to mark as scrapped.',
+                'ended-at'      => 'Scrap Date & Time',
+                'note'          => 'Scrap Reason / Note',
+                'attachments'   => 'Scrap Attachments',
             ],
             'notification' => [
                 'title' => 'Asset Scrapped',
@@ -237,9 +261,11 @@ return [
                 'submit'      => 'Confirm Lost',
             ],
             'fields' => [
-                'ended-at'    => 'Reported Date & Time',
-                'note'        => 'Incident / Investigation Note',
-                'attachments' => 'Report Attachments',
+                'quantity'      => 'Lost Quantity',
+                'quantity-help' => 'Specify how many units to mark as lost.',
+                'ended-at'      => 'Reported Date & Time',
+                'note'          => 'Incident / Investigation Note',
+                'attachments'   => 'Report Attachments',
             ],
             'notification' => [
                 'title' => 'Asset Marked Lost',
@@ -283,8 +309,8 @@ return [
                 'note'                => 'Batch Note',
                 'tracking-mode'       => 'Tracking Mode',
                 'modes'               => [
-                    'with-serials'    => 'Serialized Units (Tracked by Serial Number)',
-                    'without-serials' => 'Un-numbered Units (Office chairs, tools, bulk items)',
+                    'with-serials'    => 'Serialized Units',
+                    'without-serials' => 'Un-numbered Units',
                 ],
                 'serials-raw'         => 'Serials List (one per line or comma-separated)',
                 'serials-raw-help'    => 'Paste serials. Format: SERIAL_NO or TAG,SERIAL_NO per line.',
@@ -314,14 +340,16 @@ return [
             'identity' => [
                 'title'   => 'Asset Identity',
                 'entries' => [
-                    'asset-tag' => 'Asset Tag',
-                    'name'      => 'Asset Name',
-                    'product'   => 'Product',
-                    'model'     => 'Model',
-                    'category'  => 'Category',
-                    'serial-no' => 'Serial Number',
-                    'status'    => 'Status',
-                    'condition' => 'Condition',
+                    'asset-tag'     => 'Asset Tag',
+                    'parent-asset'  => 'Parent Lot',
+                    'tracking-mode' => 'Tracking Mode',
+                    'name'          => 'Asset Name',
+                    'product'       => 'Product',
+                    'model'         => 'Model',
+                    'category'      => 'Category',
+                    'serial-no'     => 'Serial Number',
+                    'status'        => 'Status',
+                    'condition'     => 'Condition',
                 ],
             ],
 
@@ -409,16 +437,17 @@ return [
                 ],
             ],
             'tabs' => [
-                'all'            => 'All',
-                'available'      => 'Available',
-                'consumables'    => 'Consumables',
-                'site-assets'    => 'Fixed Site Assets',
-                'with-employees' => 'With Employees',
-                'at-sites'       => 'At Sites / Warehouses',
-                'in-the-field'   => 'In the Field',
-                'overdue-return' => 'Overdue Return',
-                'scrapped-lost'  => 'Scrapped / Lost',
-                'archived'       => 'Archived',
+                'all'             => 'All',
+                'available'       => 'Available',
+                'quantity-assets' => 'Quantity-Tracked Assets',
+                'consumables'     => 'Consumables',
+                'site-assets'     => 'Fixed Site Assets',
+                'with-employees'  => 'With Employees',
+                'at-sites'        => 'At Sites / Warehouses',
+                'in-the-field'    => 'In the Field',
+                'overdue-return'  => 'Overdue Return',
+                'scrapped-lost'   => 'Scrapped / Lost',
+                'archived'        => 'Archived',
             ],
         ],
         'create' => [

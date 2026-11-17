@@ -16,6 +16,7 @@ return [
                     'name'                 => 'Product Name',
                     'category'             => 'Category',
                     'type'                 => 'Product Type',
+                    'tracking-mode'        => 'Tracking Mode',
                     'type-asset-hint'      => 'A tracked unit identified by serial number and custody holder.',
                     'type-consumable-hint' => 'A quantity batch issued in units without return tracking.',
                     'model'                => 'Model',
@@ -39,13 +40,14 @@ return [
             'general' => [
                 'title'   => 'General Information',
                 'entries' => [
-                    'name'      => 'Product Name',
-                    'category'  => 'Category',
-                    'type'      => 'Product Type',
-                    'model'     => 'Model',
-                    'cost'      => 'Standard Cost',
-                    'is-active' => 'Active',
-                    'note'      => 'Description / Specifications',
+                    'name'          => 'Product Name',
+                    'category'      => 'Category',
+                    'type'          => 'Product Type',
+                    'tracking-mode' => 'Tracking Mode',
+                    'model'         => 'Model',
+                    'cost'          => 'Standard Cost',
+                    'is-active'     => 'Active',
+                    'note'          => 'Description / Specifications',
                 ],
             ],
 
@@ -72,6 +74,7 @@ return [
             'name'                    => 'Product Name',
             'category'                => 'Category',
             'type'                    => 'Product Type',
+            'tracking-mode'           => 'Tracking Mode',
             'model'                   => 'Model',
             'cost'                    => 'Cost',
             'assets-count'            => 'Registered Assets',
@@ -91,16 +94,24 @@ return [
         ],
 
         'filters' => [
-            'category'  => 'Category',
-            'type'      => 'Product Type',
-            'is-active' => 'Active',
-            'company'   => 'Company',
+            'category'      => 'Category',
+            'type'          => 'Product Type',
+            'tracking-mode' => 'Tracking Mode',
+            'is-active'     => 'Active',
+            'company'       => 'Company',
         ],
     ],
 
     'views' => [
-        'active'   => 'Active Products',
-        'archived' => 'Archived Products',
+        'active'          => 'Active Products',
+        'durable-assets'  => 'Durable Assets',
+        'quantity-assets' => 'Quantity-Tracked Assets',
+        'consumables'     => 'Consumables',
+        'archived'        => 'Archived Products',
+    ],
+
+    'validation' => [
+        'cannot-change-tracking-mode-with-assets' => 'Tracking mode cannot be changed after asset records have been registered for this product.',
     ],
 
     'relation-manager' => [

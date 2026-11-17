@@ -21,8 +21,6 @@ class AssetMovement extends Model
 {
     use BelongsToCompany, ChecksCompanyConsistency, HasFactory;
 
-    public static bool $allowCleanupDelete = false;
-
     protected $table = 'asset_movements';
 
     protected $fillable = [
@@ -65,11 +63,7 @@ class AssetMovement extends Model
             ]);
         });
 
-        static::deleting(function (self $movement): void {
-            if (static::$allowCleanupDelete) {
-                return;
-            }
-
+        static::deleting(function (): void {
             throw ValidationException::withMessages([
                 'movement' => __('assets::services/asset-custody.movement-immutable'),
             ]);

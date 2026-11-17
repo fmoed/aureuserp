@@ -28,6 +28,10 @@ class AssetExporter extends Exporter
     {
         return $query
             ->when(auth()->check(), fn (Builder $q) => $q->whereIn('company_id', auth()->user()->allowedCompanies()->pluck('companies.id')->push(auth()->user()->default_company_id)->filter()->unique()->values()->all()))
+            ->whereNot(fn (Builder $q) => $q
+                ->whereNull('parent_asset_id')
+                ->where('status', AssetStatus::Available)
+                ->where('quantity', '<=', 0))
             ->with([
                 'product.category',
                 'warehouse',

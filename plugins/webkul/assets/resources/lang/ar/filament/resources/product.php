@@ -16,6 +16,7 @@ return [
                     'name'                 => 'اسم المنتج',
                     'category'             => 'الفئة',
                     'type'                 => 'نوع المنتج',
+                    'tracking-mode'        => 'آلية التتبع',
                     'type-asset-hint'      => 'وحدة متتبعة تُعرّف بالرقم التسلسلي والعهدة.',
                     'type-consumable-hint' => 'دفعة كمية تُصرف بالوحدات دون تتبع الإرجاع.',
                     'model'                => 'الموديل / الطراز',
@@ -39,13 +40,14 @@ return [
             'general' => [
                 'title'   => 'البيانات العامة',
                 'entries' => [
-                    'name'      => 'اسم المنتج',
-                    'category'  => 'الفئة',
-                    'type'      => 'نوع المنتج',
-                    'model'     => 'الموديل / الطراز',
-                    'cost'      => 'التكلفة الافتراضية',
-                    'is-active' => 'نشط',
-                    'note'      => 'المواصفات المشتركة / الملاحظات',
+                    'name'          => 'اسم المنتج',
+                    'category'      => 'الفئة',
+                    'type'          => 'نوع المنتج',
+                    'tracking-mode' => 'آلية التتبع',
+                    'model'         => 'الموديل / الطراز',
+                    'cost'          => 'التكلفة الافتراضية',
+                    'is-active'     => 'نشط',
+                    'note'          => 'المواصفات المشتركة / الملاحظات',
                 ],
             ],
 
@@ -72,11 +74,12 @@ return [
             'name'                    => 'اسم المنتج',
             'category'                => 'الفئة',
             'type'                    => 'نوع المنتج',
+            'tracking-mode'           => 'آلية التتبع',
             'model'                   => 'الموديل',
             'cost'                    => 'التكلفة',
             'assets-count'            => 'الوحدات المسجلة',
             'available-assets-count'  => 'المتاح بالمخازن',
-            'held-assets-count'       => 'المصروف كعهدة',
+            'held-assets-count'       => 'في العهدة',
             'terminated-assets-count' => 'المتلف / المفقود',
             'total-cost'              => 'إجمالي القيمة المالية',
             'is-active'               => 'نشط',
@@ -91,16 +94,24 @@ return [
         ],
 
         'filters' => [
-            'category'  => 'الفئة',
-            'type'      => 'نوع المنتج',
-            'is-active' => 'نشط',
-            'company'   => 'الشركة',
+            'category'      => 'الفئة',
+            'type'          => 'نوع المنتج',
+            'tracking-mode' => 'آلية التتبع',
+            'is-active'     => 'نشط',
+            'company'       => 'الشركة',
         ],
     ],
 
     'views' => [
-        'active'   => 'المنتجات النشطة',
-        'archived' => 'المنتجات المؤرشفة',
+        'active'          => 'المنتجات النشطة',
+        'durable-assets'  => 'أصول مستديمة',
+        'quantity-assets' => 'أصول مستديمة بالكمية',
+        'consumables'     => 'أصناف مستهلكة',
+        'archived'        => 'المنتجات المؤرشفة',
+    ],
+
+    'validation' => [
+        'cannot-change-tracking-mode-with-assets' => 'لا يمكن تغيير آلية التتبع بعد تسجيل أصول أو دفعات مرتبطة بهذا المنتج.',
     ],
 
     'relation-manager' => [
