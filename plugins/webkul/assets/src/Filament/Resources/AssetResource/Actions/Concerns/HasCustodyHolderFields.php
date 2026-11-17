@@ -72,7 +72,6 @@ trait HasCustodyHolderFields
                         ->orderBy('full_name'),
                 )
                 ->searchable()
-                ->preload()
                 ->rules($holderRules)
                 ->live()
                 ->required(fn (Get $get): bool => $get('allocation_mode') === 'site_asset'
@@ -133,7 +132,6 @@ trait HasCustodyHolderFields
                     modifyQueryUsing: fn (Builder $query, Asset $record) => $query->where('company_id', $record->company_id)->where('is_active', true),
                 )
                 ->searchable()
-                ->preload()
                 ->rules($holderRules)
                 ->visible(fn (Get $get): bool => ! static::isBatchConsumableMode($get) && ($get('allocation_mode') ?? 'employee_custody') === 'employee_custody')
                 ->required(fn (Get $get): bool => ! static::isBatchConsumableMode($get) && ($get('allocation_mode') ?? 'employee_custody') === 'employee_custody'),
@@ -147,7 +145,6 @@ trait HasCustodyHolderFields
                 )
                 ->multiple()
                 ->searchable()
-                ->preload()
                 ->live()
                 ->rules($holderRules)
                 ->dehydrated()

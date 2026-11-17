@@ -185,7 +185,6 @@ class AssetsTable
                     ->label(__('assets::filament/resources/asset.table.filters.category'))
                     ->relationship('product.category', 'full_name')
                     ->searchable()
-                    ->preload()
                     ->multiple()
                     ->query(fn (Builder $query, array $data): Builder => filled($data['values'] ?? $data['value'] ?? null)
                         ? $query->whereHas('product', fn (Builder $q) => AssetCategory::applySubtreeFilter($q, $data['values'] ?? $data['value'], 'category_id'))
@@ -201,21 +200,18 @@ class AssetsTable
                     ->label(__('assets::filament/resources/asset.table.filters.department'))
                     ->relationship('currentEmployee.department', 'name')
                     ->searchable()
-                    ->preload()
                     ->multiple(),
 
                 SelectFilter::make('warehouse_id')
                     ->label(__('assets::filament/resources/asset.table.filters.warehouse'))
                     ->relationship('warehouse', 'name')
                     ->searchable()
-                    ->preload()
                     ->multiple(),
 
                 SelectFilter::make('current_site_id')
                     ->label(__('assets::filament/resources/asset.table.filters.current-site'))
                     ->relationship('currentSite', 'full_name')
                     ->searchable()
-                    ->preload()
                     ->multiple()
                     ->query(fn (Builder $query, array $data): Builder => filled($data['values'] ?? $data['value'] ?? null)
                         ? AssetSite::applySubtreeFilter($query, $data['values'] ?? $data['value'], 'current_site_id')
@@ -232,21 +228,18 @@ class AssetsTable
                     ->label(__('assets::filament/resources/asset.table.filters.site-type'))
                     ->relationship('currentSite.siteType', 'name')
                     ->searchable()
-                    ->preload()
                     ->multiple(),
 
                 SelectFilter::make('product_id')
                     ->label(__('assets::filament/resources/asset.table.filters.product'))
                     ->relationship('product', 'name')
                     ->searchable()
-                    ->preload()
                     ->multiple(),
 
                 SelectFilter::make('company_id')
                     ->label(__('assets::filament/resources/asset.table.filters.company'))
                     ->relationship('company', 'name')
-                    ->searchable()
-                    ->preload(),
+                    ->searchable(),
             ])
             ->recordActions([
                 ViewAction::make()->hidden(fn (Asset $record): bool => $record->trashed()),

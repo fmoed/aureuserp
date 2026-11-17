@@ -188,7 +188,6 @@ class AssetMovementResource extends Resource
                     ->label(__('assets::filament/resources/asset-movement.table.filters.category'))
                     ->relationship('asset.product.category', 'full_name')
                     ->searchable()
-                    ->preload()
                     ->multiple()
                     ->query(fn (Builder $query, array $data): Builder => filled($data['values'] ?? $data['value'] ?? null)
                         ? $query->whereHas('asset.product', fn (Builder $q) => AssetCategory::applySubtreeFilter($q, $data['values'] ?? $data['value'], 'category_id'))
@@ -198,7 +197,6 @@ class AssetMovementResource extends Resource
                     ->label(__('assets::filament/resources/asset-movement.table.filters.product'))
                     ->relationship('asset.product', 'name')
                     ->searchable()
-                    ->preload()
                     ->multiple(),
 
                 SelectFilter::make('asset_id')
@@ -211,7 +209,6 @@ class AssetMovementResource extends Resource
                     ->label(__('assets::filament/resources/asset-movement.table.filters.warehouse'))
                     ->relationship('toWarehouse', 'name')
                     ->searchable()
-                    ->preload()
                     ->multiple()
                     ->query(function (Builder $query, array $data): Builder {
                         $values = Arr::wrap($data['values'] ?? $data['value'] ?? null);
@@ -246,7 +243,6 @@ class AssetMovementResource extends Resource
                     ->label(__('assets::filament/resources/asset-movement.table.filters.department'))
                     ->relationship('toEmployee.department', 'name')
                     ->searchable()
-                    ->preload()
                     ->multiple()
                     ->query(function (Builder $query, array $data): Builder {
                         $values = Arr::wrap($data['values'] ?? $data['value'] ?? null);
@@ -264,7 +260,6 @@ class AssetMovementResource extends Resource
                     ->label(__('assets::filament/resources/asset-movement.table.filters.site'))
                     ->relationship('toSite', 'full_name')
                     ->searchable()
-                    ->preload()
                     ->multiple()
                     ->query(function (Builder $query, array $data): Builder {
                         $values = Arr::wrap($data['values'] ?? $data['value'] ?? null);

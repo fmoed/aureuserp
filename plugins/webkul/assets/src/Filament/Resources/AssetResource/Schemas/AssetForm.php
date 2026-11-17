@@ -263,7 +263,6 @@ class AssetForm
                                             ->orderBy('full_name'),
                                     )
                                     ->searchable()
-                                    ->preload()
                                     ->live()
                                     ->visible(fn (?Model $record, Get $get): bool => ! $record?->exists && in_array($get('initial_placement'), ['site_asset', 'employee_custody']))
                                     ->required(fn (?Model $record, Get $get): bool => ! $record?->exists && (
@@ -301,7 +300,6 @@ class AssetForm
                                             ->where(owned_by_company($get('company_id'))),
                                     )
                                     ->searchable()
-                                    ->preload()
                                     ->visible(fn (?Model $record, Get $get): bool => ! $record?->exists && $get('initial_placement') === 'employee_custody')
                                     ->required(fn (?Model $record, Get $get): bool => ! $record?->exists && $get('initial_placement') === 'employee_custody')
                                     ->columnSpanFull(),

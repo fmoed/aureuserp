@@ -154,7 +154,6 @@ class ProductsTable
                     ->label(__('assets::filament/resources/product.table.filters.category'))
                     ->relationship('category', 'full_name')
                     ->searchable()
-                    ->preload()
                     ->multiple()
                     ->query(fn (Builder $query, array $data): Builder => filled($data['values'] ?? $data['value'] ?? null)
                         ? AssetCategory::applySubtreeFilter($query, $data['values'] ?? $data['value'], 'category_id')
@@ -166,8 +165,7 @@ class ProductsTable
                 SelectFilter::make('company_id')
                     ->label(__('assets::filament/resources/product.table.filters.company'))
                     ->relationship('company', 'name')
-                    ->searchable()
-                    ->preload(),
+                    ->searchable(),
             ])
             ->recordActions([
                 ViewAction::make()->hidden(fn (AssetProduct $record): bool => $record->trashed()),

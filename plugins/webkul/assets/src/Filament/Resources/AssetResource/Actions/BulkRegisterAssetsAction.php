@@ -214,7 +214,6 @@ class BulkRegisterAssetsAction
                                     ->orderBy('full_name'),
                             )
                             ->searchable()
-                            ->preload()
                             ->live()
                             ->visible(fn (Get $get): bool => in_array($get('initial_placement'), ['site_asset', 'employee_custody']))
                             ->required(fn (Get $get): bool => $get('initial_placement') === 'site_asset' || ($get('initial_placement') === 'employee_custody' && (bool) app(AssetSettings::class)->require_site_on_custody))
@@ -245,7 +244,6 @@ class BulkRegisterAssetsAction
                                     ->where(owned_by_company($get('company_id'))),
                             )
                             ->searchable()
-                            ->preload()
                             ->visible(fn (Get $get): bool => $get('initial_placement') === 'employee_custody')
                             ->required(fn (Get $get): bool => $get('initial_placement') === 'employee_custody')
                             ->columnSpanFull(),
