@@ -122,6 +122,10 @@ class AbsenceReportExporter extends Exporter
                 ->label(__('attendance::filament/exports/absence-report.columns.on-leave'))
                 ->enabledByDefault(false)
                 ->formatStateUsing(fn (Employee $record, array $options, self $exporter): int|float => $exporter->summaryFor($record, $options)['on_leave']),
+            ExportColumn::make('remaining_leave')
+                ->label(__('attendance::filament/exports/absence-report.columns.remaining-leave'))
+                ->enabledByDefault(false)
+                ->formatStateUsing(fn (Employee $record, array $options, self $exporter): int|float => $exporter->summaryFor($record, $options)['remaining_leave']),
             ExportColumn::make('holidays')
                 ->label(__('attendance::filament/exports/absence-report.columns.holidays'))
                 ->enabledByDefault(false)

@@ -5,6 +5,7 @@ namespace Webkul\Attendance\Filament\Exports\Concerns;
 use Closure;
 use Filament\Actions\ExportAction;
 use Filament\Actions\ExportBulkAction;
+use Filament\Actions\Exports\ExportColumn;
 use Filament\Actions\Exports\Models\Export;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Hidden;
@@ -13,6 +14,7 @@ use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\Fieldset;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
+use Filament\Tables\Contracts\HasTable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 use Webkul\Attendance\Filament\Pages\AttendanceOverview;
@@ -133,6 +135,8 @@ trait HasAbsenceExportOptions
         return [
             Hidden::make('locale')
                 ->default(fn (): string => app()->getLocale()),
+            Hidden::make('hidden_dates')
+                ->default(fn ($livewire): array => $livewire instanceof AttendanceOverview ? $livewire->hiddenDayColumnDates() : []),
             Select::make('employee_id')
                 ->label(__('attendance::filament/exports/absence-report.options.employee'))
                 ->multiple()
@@ -272,8 +276,9 @@ trait HasAbsenceExportOptions
 
     /**
      * Filament places the column picker above the exporter's own options.
-     * Export flows ask for the filter fields first, so move the
-     * `columnMap` fieldset to the end while reusing the native components.
+     * Reuse the native components (moving `columnMap` last) and sync the
+     * table's currently visible columns into `columnMap.*.isEnabled` via
+     * `afterFormFilled()`.
      */
     public static function configureExportAction(ExportAction|ExportBulkAction $action): ExportAction|ExportBulkAction
     {
@@ -310,6 +315,53 @@ trait HasAbsenceExportOptions
             }
 
             return $current;
+        })->afterFormFilled(function (ExportAction|ExportBulkAction $action): void {
+            if (! $action->hasColumnMapping()) {
+                return;
+            }
+
+            $livewire = $action->getLivewire();
+            $columnMap = [];
+
+            foreach ($action->getExporter()::getVisibleColumns() as $column) {
+                $columnMap[$column->getName()] = [
+                    'isEnabled' => static::resolveExportColumnDefaultEnabled($column, $livewire),
+                ];
+            }
+
+            $action->fillData(['columnMap' => $columnMap]);
         });
+    }
+
+    protected static function resolveExportColumnDefaultEnabled(ExportColumn $column, mixed $livewire): bool
+    {
+        if (! $livewire instanceof HasTable) {
+            return $column->isEnabledByDefault();
+        }
+
+        $name = $column->getName();
+        $snake = str_replace('-', '_', $name);
+
+        $candidates = match ($name) {
+            'employee'       => ['name'],
+            'worked-minutes' => ['totals.minutes'],
+            default          => array_values(array_unique([
+                $name,
+                'totals.'.$name,
+                'totals.'.$snake,
+            ])),
+        };
+
+        $table = $livewire->getTable();
+        $tableColumns = $table->getColumns();
+        $visibleColumns = $table->getVisibleColumns();
+
+        foreach ($candidates as $tableColumnName) {
+            if (array_key_exists($tableColumnName, $tableColumns)) {
+                return array_key_exists($tableColumnName, $visibleColumns);
+            }
+        }
+
+        return $column->isEnabledByDefault();
     }
 }

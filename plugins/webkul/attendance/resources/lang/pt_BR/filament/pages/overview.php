@@ -53,6 +53,7 @@ return [
             'late-occurrences'  => ':count atrasos',
             'variance-hours'    => 'Variação de horas',
             'missing-checkouts' => 'Saídas ausentes',
+            'remaining-leave'   => 'Licenças restantes',
             'break'             => 'Intervalo',
             'late'              => 'Atraso',
             'early-leave'       => 'Saída antecipada',

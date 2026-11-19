@@ -8,6 +8,7 @@ return [
         'absent'               => 'Absent Days',
         'absence-rate'         => 'Absence rate',
         'on-leave'             => 'On Leave Days',
+        'remaining-leave'      => 'Remaining Leave Days',
         'holidays'             => 'Public Holidays',
         'pending'              => 'Pending Leave Days',
         'minutes'              => 'Worked Minutes',

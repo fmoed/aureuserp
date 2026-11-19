@@ -53,6 +53,7 @@ return [
             'late-occurrences'  => ':count late occurrences',
             'variance-hours'    => 'Variance',
             'missing-checkouts' => 'Missing check-outs',
+            'remaining-leave'   => 'Remaining leave',
             'break'             => 'Break',
             'late'              => 'Late',
             'early-leave'       => 'Early leave',

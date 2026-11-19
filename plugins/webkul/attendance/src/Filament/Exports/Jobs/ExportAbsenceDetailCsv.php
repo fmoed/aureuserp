@@ -3,6 +3,7 @@
 namespace Webkul\Attendance\Filament\Exports\Jobs;
 
 use AnourValar\EloquentSerialize\Facades\EloquentSerializeFacade;
+use Filament\Actions\Exports\ExportColumn;
 use Filament\Actions\Exports\Jobs\ExportCsv;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Contracts\Filesystem\Filesystem;
@@ -11,6 +12,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use League\Csv\Writer;
 use SplTempFileObject;
+use Webkul\Attendance\Filament\Exports\AbsenceDetailExporter;
 use Webkul\Attendance\Filament\Tables\AttendanceRegisterTable;
 use Webkul\Attendance\Services\AttendanceOverviewService;
 
@@ -45,12 +47,26 @@ class ExportAbsenceDetailCsv extends ExportCsv
 
             $matrix = app(AttendanceOverviewService::class)->register(collect($employees), $from, $to);
 
+            $hiddenDates = array_flip((array) ($this->options['hidden_dates'] ?? []));
+
             $dates = [];
             $cursor = $from->copy();
             while ($cursor->lte($to)) {
-                $dates[] = $cursor->toDateString();
+                $dateStr = $cursor->toDateString();
+
+                if (! isset($hiddenDates[$dateStr])) {
+                    $dates[] = $dateStr;
+                }
+
                 $cursor->addDay();
             }
+
+            $columnKeys = $this->columnMap !== []
+                ? array_keys($this->columnMap)
+                : array_map(
+                    fn (ExportColumn $column): string => $column->getName(),
+                    AbsenceDetailExporter::getColumns(),
+                );
 
             $csv = Writer::from(new SplTempFileObject);
             $csv->setDelimiter($this->exporter::getCsvDelimiter());
@@ -62,22 +78,28 @@ class ExportAbsenceDetailCsv extends ExportCsv
                 $totals = $row['totals'];
                 $hoursStr = AttendanceRegisterTable::formatMinutesToHours((int) $totals['minutes']);
 
-                $line = [
-                    (string) $row['name'],
-                    (string) ($row['calendar'] ?? '—'),
-                    AttendanceRegisterTable::formatCount($totals['workdays']),
-                    AttendanceRegisterTable::formatCount($totals['present']),
-                    AttendanceRegisterTable::formatCount($totals['absent']),
-                    AttendanceRegisterTable::formatCount($totals['on_leave']),
-                    AttendanceRegisterTable::formatMinutesToHours((int) ($totals['scheduled_minutes'] ?? 0)),
-                    $hoursStr,
-                    AttendanceRegisterTable::formatMinutesToHours((int) ($totals['overtime_minutes'] ?? 0)),
-                    AttendanceRegisterTable::formatMinutesToHours((int) ($totals['shortfall_minutes'] ?? 0)),
-                    (string) (int) ($totals['late_minutes'] ?? 0),
-                    (string) (int) ($totals['early_leave_minutes'] ?? 0),
-                    AttendanceRegisterTable::formatMinutesToHours((int) ($totals['variance_minutes'] ?? 0), true),
-                    $totals['absence_rate'].'%',
+                $values = [
+                    'employee'            => (string) $row['name'],
+                    'schedule'            => (string) ($row['calendar'] ?? '—'),
+                    'workdays'            => AttendanceRegisterTable::formatCount($totals['workdays']),
+                    'present'             => AttendanceRegisterTable::formatCount($totals['present']),
+                    'absent'              => AttendanceRegisterTable::formatCount($totals['absent']),
+                    'on_leave'            => AttendanceRegisterTable::formatCount($totals['on_leave']),
+                    'remaining-leave'     => AttendanceRegisterTable::formatCount($totals['remaining_leave'] ?? 0),
+                    'scheduled-minutes'   => AttendanceRegisterTable::formatMinutesToHours((int) ($totals['scheduled_minutes'] ?? 0)),
+                    'worked-minutes'      => $hoursStr,
+                    'overtime-minutes'    => AttendanceRegisterTable::formatMinutesToHours((int) ($totals['overtime_minutes'] ?? 0)),
+                    'shortfall-minutes'   => AttendanceRegisterTable::formatMinutesToHours((int) ($totals['shortfall_minutes'] ?? 0)),
+                    'late-minutes'        => (string) (int) ($totals['late_minutes'] ?? 0),
+                    'early-leave-minutes' => (string) (int) ($totals['early_leave_minutes'] ?? 0),
+                    'variance-minutes'    => AttendanceRegisterTable::formatMinutesToHours((int) ($totals['variance_minutes'] ?? 0), true),
+                    'absence_rate'        => $totals['absence_rate'].'%',
                 ];
+
+                $line = array_map(
+                    fn (string $key): string => (string) ($values[$key] ?? ''),
+                    $columnKeys,
+                );
 
                 foreach ($dates as $date) {
                     $status = (string) ($row['cells'][$date] ?? '');
