@@ -54,6 +54,8 @@ return [
 
     'url' => env('APP_URL', 'http://localhost'),
 
+    'lan_urls' => array_filter(array_map('trim', explode(',', (string) env('APP_LAN_URL', '')))),
+
     /*
     |--------------------------------------------------------------------------
     | Asset URL

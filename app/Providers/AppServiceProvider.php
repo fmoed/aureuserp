@@ -20,6 +20,14 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        $origin = request()->getSchemeAndHttpHost();
+
+        if (in_array($origin, config('app.lan_urls', []), true)) {
+            URL::useAssetOrigin($origin);
+
+            return;
+        }
+
         if (app()->environment('production')) {
             URL::forceScheme('https');
         }
