@@ -8,6 +8,7 @@ return [
         'present'               => 'Présent',
         'absent'                => 'Absent',
         'on-leave'              => 'Congés',
+        'remaining-leave'       => 'Congés restants',
         'hours'                 => 'Heures travaillées',
         'scheduled-minutes'     => 'Heures planifiées',
         'worked-minutes'        => 'Heures travaillées',

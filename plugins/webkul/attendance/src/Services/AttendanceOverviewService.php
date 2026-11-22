@@ -22,6 +22,7 @@ use Webkul\Support\Models\Scopes\CompanyScope;
 use Webkul\TimeOff\Enums\LeaveValidationType;
 use Webkul\TimeOff\Enums\State;
 use Webkul\TimeOff\Models\Leave;
+use Webkul\TimeOff\Models\LeaveAllocation;
 use Webkul\TimeOff\Models\LeaveMandatoryDay;
 
 /**
@@ -126,6 +127,11 @@ class AttendanceOverviewService
     private ?bool $countPendingAsAbsent = null;
 
     private ?bool $countUnpaidLeaveAsAbsent = null;
+
+    /**
+     * @var array<string, array{remaining_leave: int|float, leave_balances: list<array{name: string, allocated: int|float, remaining: int|float}>}>
+     */
+    private array $leaveBalancesCache = [];
 
     private ?ShiftWindowResolver $resolverInstance = null;
 
@@ -501,6 +507,7 @@ class AttendanceOverviewService
         $rows = $this->rowsByEmployeeDay($employees, $fromStr, $toStr);
         $leaves = $this->leavesByEmployee($employees, $fromStr, $toStr);
         $holidays = $this->holidaysByDate($employees, $fromStr, $toStr);
+        $this->preloadLeaveBalances($employees, $to->year);
 
         $rowDatesByEmployee = $rows->keys()
             ->map(fn (string $key): array => explode('|', $key, 2))
@@ -570,6 +577,10 @@ class AttendanceOverviewService
             ? collect()
             : $this->daily($employees, $from, $to->gt($today) ? $today->copy() : $to);
 
+        if ($from->gt($today)) {
+            $this->preloadLeaveBalances($employees, $to->year);
+        }
+
         $grouped = $entries->groupBy('employee_id');
         $displayDates = $this->datesBetween($fromStr, $toStr, $fromStr, $toStr);
 
@@ -621,7 +632,7 @@ class AttendanceOverviewService
                 'calendar_id' => $calendar?->id,
                 'cells'       => $cells,
                 'meta'        => $meta,
-                'totals'      => $this->summarize($employee, $employeeEntries),
+                'totals'      => $this->summarize($employee, $employeeEntries, $to),
             ]);
         }
 
@@ -862,7 +873,7 @@ class AttendanceOverviewService
         $grouped = $this->daily($employees, $from, $to)->groupBy('employee_id');
 
         return $employees
-            ->map(fn (Employee $employee) => $this->summarize($employee, $grouped->get($employee->getKey(), collect())))
+            ->map(fn (Employee $employee) => $this->summarize($employee, $grouped->get($employee->getKey(), collect()), $to))
             ->values();
     }
 
@@ -873,7 +884,7 @@ class AttendanceOverviewService
      */
     public function summaryFor(Employee $employee, Carbon $from, Carbon $to): array
     {
-        return $this->summarize($employee, $this->daily(collect([$employee]), $from, $to));
+        return $this->summarize($employee, $this->daily(collect([$employee]), $from, $to), $to);
     }
 
     /**
@@ -919,7 +930,102 @@ class AttendanceOverviewService
         return $this->countUnpaidLeaveAsAbsent ??= AttendanceSettings::countUnpaidLeaveAsAbsent();
     }
 
-    protected function summarize(Employee $employee, Collection $entries): array
+    protected function preloadLeaveBalances(Collection $employees, int $year): void
+    {
+        if (
+            $employees->isEmpty()
+            || ! Package::isPluginInstalled('time-off')
+            || ! Schema::hasTable('time_off_leave_allocations')
+            || ! Schema::hasTable('time_off_leaves')
+        ) {
+            return;
+        }
+
+        $missingIds = array_values(array_filter(
+            $this->employeeIds($employees),
+            fn (int $id): bool => ! array_key_exists($id.'|'.$year, $this->leaveBalancesCache),
+        ));
+
+        if ($missingIds === []) {
+            return;
+        }
+
+        foreach ($missingIds as $id) {
+            $this->leaveBalancesCache[$id.'|'.$year] = ['remaining_leave' => 0, 'leave_balances' => []];
+        }
+
+        [$startDate, $endDate] = ["{$year}-01-01", "{$year}-12-31"];
+
+        $allocations = LeaveAllocation::withoutGlobalScope(CompanyScope::class)
+            ->whereIn('employee_id', $missingIds)
+            ->where('state', State::VALIDATE_TWO->value)
+            ->where(fn (Builder $q) => $q->whereNull('date_from')->orWhereDate('date_from', '<=', $endDate))
+            ->where(fn (Builder $q) => $q->whereNull('date_to')->orWhereDate('date_to', '>=', $startDate))
+            ->with('holidayStatus')
+            ->get();
+
+        if ($allocations->isEmpty()) {
+            return;
+        }
+
+        $leaves = Leave::withoutGlobalScope(CompanyScope::class)
+            ->whereIn('employee_id', $missingIds)
+            ->where('state', '!=', State::REFUSE->value)
+            ->where(fn (Builder $q) => $q->whereDate('date_from', '<=', $endDate)
+                ->orWhere(fn (Builder $inner) => $inner->whereNull('date_from')->whereDate('request_date_from', '<=', $endDate)))
+            ->where(fn (Builder $q) => $q->whereDate('date_to', '>=', $startDate)
+                ->orWhere(fn (Builder $inner) => $inner->whereNull('date_to')->whereDate('date_from', '>=', $startDate))
+                ->orWhere(fn (Builder $inner) => $inner->whereNull('date_to')->whereNull('date_from')->whereDate('request_date_to', '>=', $startDate)))
+            ->with('holidayStatus')
+            ->get();
+
+        $taken = [];
+        foreach ($leaves as $leave) {
+            if ($this->leaveStatus($leave) !== self::STATUS_ON_LEAVE || ! $leave->holiday_status_id) {
+                continue;
+            }
+
+            $days = (float) $leave->number_of_days;
+            if ($days <= 0) {
+                $fromDate = $leave->date_from ?? $leave->request_date_from;
+                $toDate = $leave->date_to ?? $leave->date_from ?? $leave->request_date_to;
+                $days = (bool) $leave->request_unit_half
+                    ? 0.5
+                    : (($fromDate && $toDate) ? (float) (Carbon::parse($fromDate)->startOfDay()->diffInDays(Carbon::parse($toDate)->startOfDay()) + 1) : 1.0);
+            }
+
+            $empId = (int) $leave->employee_id;
+            $typeId = (int) $leave->holiday_status_id;
+            $taken[$empId][$typeId] = ($taken[$empId][$typeId] ?? 0.0) + $days;
+        }
+
+        $round = fn (float $value): int|float => abs($value - round($value)) < 0.0001 ? (int) round($value) : round($value, 1);
+
+        foreach ($allocations->groupBy('employee_id') as $empId => $empAllocations) {
+            $totalRemaining = 0.0;
+            $balances = [];
+
+            foreach ($empAllocations->groupBy('holiday_status_id') as $typeId => $typeAllocations) {
+                $type = $typeAllocations->first()?->holidayStatus;
+                $allocated = (float) $typeAllocations->sum('number_of_days');
+                $used = (float) ($taken[(int) $empId][(int) $typeId] ?? 0.0);
+                $remaining = (bool) ($type?->allows_negative ?? false) ? ($allocated - $used) : max(0.0, $allocated - $used);
+                $totalRemaining += $remaining;
+                $balances[] = [
+                    'name'      => (string) ($type?->name ?? ''),
+                    'allocated' => $round($allocated),
+                    'remaining' => $round($remaining),
+                ];
+            }
+
+            $this->leaveBalancesCache[((int) $empId).'|'.$year] = [
+                'remaining_leave' => $round($totalRemaining),
+                'leave_balances'  => $balances,
+            ];
+        }
+    }
+
+    protected function summarize(Employee $employee, Collection $entries, ?Carbon $referenceDate = null): array
     {
         $weight = fn (float $value): int|float => abs($value - round($value)) < 0.0001
             ? (int) round($value)
@@ -970,6 +1076,9 @@ class AttendanceOverviewService
             ->filter(fn (array $entry): bool => (bool) ($entry['leave_unpaid'] ?? false))
             ->sum(fn (array $entry): int => (int) ($entry['leave_minutes'] ?? 0));
 
+        $leaveBalance = $this->leaveBalancesCache[$employee->getKey().'|'.($referenceDate ?? Carbon::today())->year]
+            ?? ['remaining_leave' => 0, 'leave_balances' => []];
+
         return [
             'employee_id'           => $employee->getKey(),
             'name'                  => $employee->name,
@@ -978,6 +1087,8 @@ class AttendanceOverviewService
             'half_days'             => $entries->where('status', self::STATUS_HALF_DAY)->count(),
             'absent'                => $absent,
             'on_leave'              => $onLeave,
+            'remaining_leave'       => $leaveBalance['remaining_leave'],
+            'leave_balances'        => $leaveBalance['leave_balances'],
             'paid_leave_days'       => $weight((float) $paidLeave),
             'unpaid_leave_days'     => $weight($unpaidLeave),
             'paid_leave_minutes'    => (int) $paidLeaveMinutes,

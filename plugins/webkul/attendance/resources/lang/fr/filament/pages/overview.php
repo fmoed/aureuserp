@@ -53,6 +53,7 @@ return [
             'late-occurrences'  => ':count retards',
             'variance-hours'    => "Écart d'heures",
             'missing-checkouts' => 'Sorties manquantes',
+            'remaining-leave'   => 'Congés restants',
             'break'             => 'Pause',
             'late'              => 'Retard',
             'early-leave'       => 'Départ anticipé',

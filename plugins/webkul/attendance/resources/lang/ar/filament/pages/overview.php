@@ -53,6 +53,7 @@ return [
             'late-occurrences'  => ':count مرات تأخير',
             'variance-hours'    => 'فارق الساعات',
             'missing-checkouts' => 'بصمات خروج ناقصة',
+            'remaining-leave'   => 'الإجازات المتبقية',
             'break'             => 'استراحة',
             'late'              => 'تأخير',
             'early-leave'       => 'انصراف مبكر',

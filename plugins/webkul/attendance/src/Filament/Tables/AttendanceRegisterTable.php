@@ -147,10 +147,11 @@ class AttendanceRegisterTable
             ->toggleable();
 
         foreach ([
-            'present'      => __('attendance::filament/pages/overview.grid.totals.present'),
-            'absent'       => __('attendance::filament/pages/overview.grid.totals.absent'),
-            'on_leave'     => __('attendance::filament/pages/overview.grid.totals.on-leave'),
-            'absence_rate' => __('attendance::filament/pages/overview.table.columns.rate'),
+            'present'         => __('attendance::filament/pages/overview.grid.totals.present'),
+            'absent'          => __('attendance::filament/pages/overview.grid.totals.absent'),
+            'on_leave'        => __('attendance::filament/pages/overview.grid.totals.on-leave'),
+            'remaining_leave' => __('attendance::filament/pages/overview.table.columns.remaining-leave'),
+            'absence_rate'    => __('attendance::filament/pages/overview.table.columns.rate'),
         ] as $total => $label) {
             $column = TextColumn::make('totals.'.$total)
                 ->label($label)
@@ -179,6 +180,17 @@ class AttendanceRegisterTable
                     if ((int) ($rowTotals['holiday_worked_days'] ?? 0) > 0) {
                         $parts[] = __('attendance::filament/pages/overview.statuses.holiday-present').': '.(int) $rowTotals['holiday_worked_days'];
                     }
+
+                    return $parts !== [] ? implode(' · ', $parts) : null;
+                });
+            }
+
+            if ($total === 'remaining_leave') {
+                $column->tooltip(function (Employee $record) use ($grid): ?string {
+                    $parts = array_map(
+                        fn (array $b): string => $b['name'].': '.self::formatCount($b['remaining']).' / '.self::formatCount($b['allocated']),
+                        (array) ($grid[$record->getKey()]['totals']['leave_balances'] ?? []),
+                    );
 
                     return $parts !== [] ? implode(' · ', $parts) : null;
                 });
@@ -435,6 +447,10 @@ class AttendanceRegisterTable
                     ->indicateUsing(fn (): array => $page->getTableFilterIndicators()),
             ])
             ->filtersFormWidth(Width::Medium)
+            ->toolbarActions([
+                $page->exportAction(),
+                $page->exportDetailAction(),
+            ])
             ->defaultSort('name')
             ->persistSortInSession()
             ->persistSearchInSession()

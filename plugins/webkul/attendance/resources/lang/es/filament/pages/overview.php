@@ -53,6 +53,7 @@ return [
             'late-occurrences'  => ':count llegadas tarde',
             'variance-hours'    => 'Variación de horas',
             'missing-checkouts' => 'Salidas faltantes',
+            'remaining-leave'   => 'Permisos restantes',
             'break'             => 'Descanso',
             'late'              => 'Retraso',
             'early-leave'       => 'Salida anticipada',

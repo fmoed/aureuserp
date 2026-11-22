@@ -8,6 +8,7 @@ return [
         'absent'               => 'Días ausentes',
         'absence-rate'         => 'Tasa de ausencias',
         'on-leave'             => 'Días de permiso',
+        'remaining-leave'      => 'Días de permiso restantes',
         'holidays'             => 'Días festivos',
         'pending'              => 'Permisos pendientes',
         'minutes'              => 'Minutos trabajados',

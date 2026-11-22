@@ -3,6 +3,7 @@
 namespace Webkul\Attendance\Filament\Exports\Jobs;
 
 use AnourValar\EloquentSerialize\Facades\EloquentSerializeFacade;
+use Filament\Actions\Exports\ExportColumn;
 use Filament\Actions\Exports\Jobs\PrepareCsvExport;
 use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Support\Carbon;
@@ -33,26 +34,23 @@ class PrepareAbsenceDetailExport extends PrepareCsvExport
         $from = Carbon::parse($this->options['date_from']);
         $to = Carbon::parse($this->options['date_to']);
 
-        $headers = [
-            __('attendance::filament/exports/absence-detail.columns.employee'),
-            __('attendance::filament/exports/absence-detail.columns.schedule'),
-            __('attendance::filament/exports/absence-detail.columns.workdays'),
-            __('attendance::filament/exports/absence-detail.columns.present'),
-            __('attendance::filament/exports/absence-detail.columns.absent'),
-            __('attendance::filament/exports/absence-detail.columns.on-leave'),
-            __('attendance::filament/exports/absence-detail.columns.scheduled-minutes'),
-            __('attendance::filament/exports/absence-detail.columns.worked-minutes'),
-            __('attendance::filament/exports/absence-detail.columns.overtime-minutes'),
-            __('attendance::filament/exports/absence-detail.columns.shortfall-minutes'),
-            __('attendance::filament/exports/absence-detail.columns.late-minutes'),
-            __('attendance::filament/exports/absence-detail.columns.early-leave-minutes'),
-            __('attendance::filament/exports/absence-detail.columns.variance-minutes'),
-            __('attendance::filament/exports/absence-detail.columns.absence-rate'),
-        ];
+        $headers = $this->columnMap !== []
+            ? array_values($this->columnMap)
+            : collect(AbsenceDetailExporter::getColumns())
+                ->map(fn (ExportColumn $column): string => (string) $column->getLabel())
+                ->values()
+                ->all();
+
+        $hiddenDates = array_flip((array) ($this->options['hidden_dates'] ?? []));
 
         $cursor = $from->copy();
         while ($cursor->lte($to)) {
-            $headers[] = $cursor->locale($locale)->translatedFormat('Y-m-d (D)');
+            $dateStr = $cursor->toDateString();
+
+            if (! isset($hiddenDates[$dateStr])) {
+                $headers[] = $cursor->locale($locale)->translatedFormat('Y-m-d (D)');
+            }
+
             $cursor->addDay();
         }
 

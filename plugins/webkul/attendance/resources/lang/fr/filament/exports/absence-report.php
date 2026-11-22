@@ -8,6 +8,7 @@ return [
         'absent'               => 'Jours absents',
         'absence-rate'         => "Taux d'absentéisme",
         'on-leave'             => 'Jours de congé',
+        'remaining-leave'      => 'Jours de congé restants',
         'holidays'             => 'Jours fériés',
         'pending'              => 'Congés en attente',
         'minutes'              => 'Minutes travaillées',

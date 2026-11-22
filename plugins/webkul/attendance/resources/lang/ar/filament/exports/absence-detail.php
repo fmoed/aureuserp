@@ -8,6 +8,7 @@ return [
         'present'               => 'الحاضر',
         'absent'                => 'الغائب',
         'on-leave'              => 'الإجازات',
+        'remaining-leave'       => 'الإجازات المتبقية',
         'hours'                 => 'ساعات العمل',
         'scheduled-minutes'     => 'الساعات المجدولة',
         'worked-minutes'        => 'الساعات الفعلية',

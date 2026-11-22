@@ -564,12 +564,12 @@ class AttendanceOverview extends Page implements HasForms, HasTable
 
     /**
      * Rebuilds the dynamic register table (columns + filter schema + column
-     * manager state) without wiping the applied filter values.
+     * manager state) without wiping the applied filter values or user
+     * column toggles.
      */
     public function resetTable(): void
     {
         $this->cachedDefaultTableColumnState = null;
-        $this->tableColumns = [];
         $this->tableColumnsToggleStateByName = null;
         $this->hasReorderableTableColumns = null;
 
@@ -583,6 +583,39 @@ class AttendanceOverview extends Page implements HasForms, HasTable
         $this->resetPage();
 
         $this->flushCachedTableRecords();
+    }
+
+    /**
+     * Dates (`Y-m-d`) whose day columns are currently toggled hidden in the
+     * daily register table.
+     *
+     * @return list<string>
+     */
+    public function hiddenDayColumnDates(): array
+    {
+        if ($this->registerView === self::REGISTER_TOTALS || $this->rangeMode === 'year') {
+            return [];
+        }
+
+        $visible = $this->getTable()->getVisibleColumns();
+        $hidden = [];
+
+        foreach ($this->getTable()->getColumns() as $name => $column) {
+            if (str_starts_with($name, 'cells.') && ! array_key_exists($name, $visible)) {
+                $hidden[] = substr($name, strlen('cells.'));
+            }
+        }
+
+        return $hidden;
+    }
+
+    public function getTableQueryForExport(): Builder
+    {
+        $query = Employee::query();
+
+        $this->applySearchToTableQuery($query);
+
+        return $query;
     }
 
     /**
@@ -1040,37 +1073,47 @@ class AttendanceOverview extends Page implements HasForms, HasTable
             ->all();
     }
 
-    /**
-     * Both exports stay registered so the action cache (built once per
-     * boot, before any toggle call runs) never goes stale; each action
-     * only shows itself for its own register view, evaluated per render.
-     */
     protected function getHeaderActions(): array
     {
         return [
-            AbsenceReportExporter::configureExportAction(
-                ExportAction::make()
-                    ->label(__('attendance::filament/pages/overview.export'))
-                    ->icon('heroicon-o-arrow-up-tray')
-                    ->exporter(AbsenceReportExporter::class)
-                    ->maxRows(10000)
-                    ->authorize(fn (): bool => static::canAccess())
-                    ->visible(fn (): bool => $this->registerView === self::REGISTER_TOTALS)
-                    ->modifyQueryUsing(fn (Builder $query, array $options): Builder => AbsenceReportExporter::scopeQuery($query, $options)),
-            ),
-            AbsenceDetailExporter::configureExportAction(
-                ExportAction::make('exportDetail')
-                    ->label(__('attendance::filament/pages/overview.export-detail'))
-                    ->icon('heroicon-o-arrow-down-tray')
-                    ->exporter(AbsenceDetailExporter::class)
-                    ->job(PrepareAbsenceDetailExport::class)
-                    ->columnMapping(false)
-                    ->authorize(fn (): bool => static::canAccess())
-                    ->visible(fn (): bool => $this->registerView !== self::REGISTER_TOTALS)
-                    ->modifyQueryUsing(fn (Builder $query, array $options): Builder => AbsenceReportExporter::scopeQuery($query, $options)),
-            ),
             RebuildAttendanceAction::make(),
         ];
+    }
+
+    /**
+     * Summary export placed in the table toolbar and kept resolvable as a
+     * page action for direct Livewire calls and tests.
+     */
+    public function exportAction(): Action
+    {
+        return AbsenceReportExporter::configureExportAction(
+            ExportAction::make()
+                ->label(__('attendance::filament/pages/overview.export'))
+                ->icon('heroicon-o-arrow-up-tray')
+                ->exporter(AbsenceReportExporter::class)
+                ->maxRows(10000)
+                ->authorize(fn (): bool => static::canAccess())
+                ->visible(fn (): bool => $this->registerView === self::REGISTER_TOTALS)
+                ->modifyQueryUsing(fn (Builder $query, array $options): Builder => AbsenceReportExporter::scopeQuery($query, $options)),
+        );
+    }
+
+    /**
+     * Daily matrix export placed in the table toolbar and kept resolvable
+     * as a page action for direct Livewire calls and tests.
+     */
+    public function exportDetailAction(): Action
+    {
+        return AbsenceDetailExporter::configureExportAction(
+            ExportAction::make('exportDetail')
+                ->label(__('attendance::filament/pages/overview.export-detail'))
+                ->icon('heroicon-o-arrow-down-tray')
+                ->exporter(AbsenceDetailExporter::class)
+                ->job(PrepareAbsenceDetailExport::class)
+                ->authorize(fn (): bool => static::canAccess())
+                ->visible(fn (): bool => $this->registerView !== self::REGISTER_TOTALS)
+                ->modifyQueryUsing(fn (Builder $query, array $options): Builder => AbsenceReportExporter::scopeQuery($query, $options)),
+        );
     }
 
     public function inspectDayCellAction(): Action

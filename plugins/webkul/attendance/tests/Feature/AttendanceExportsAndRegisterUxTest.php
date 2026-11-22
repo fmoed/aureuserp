@@ -4,6 +4,7 @@ require_once __DIR__.'/../../../support/tests/Helpers/TestBootstrapHelper.php';
 require_once __DIR__.'/../../../support/tests/Helpers/CompanyHelper.php';
 require_once __DIR__.'/../../../support/tests/Helpers/FilamentHelper.php';
 
+use Filament\Actions\Exports\Models\Export;
 use Illuminate\Support\Carbon;
 use Livewire\Livewire;
 use Webkul\Attendance\Filament\Exports\AbsenceDetailExporter;
@@ -19,6 +20,11 @@ use Webkul\Security\Models\User;
 use Webkul\Support\Models\Calendar;
 use Webkul\Support\Models\CalendarAttendance;
 use Webkul\Support\Models\Company;
+use Webkul\TimeOff\Enums\AllocationType;
+use Webkul\TimeOff\Enums\State;
+use Webkul\TimeOff\Models\Leave;
+use Webkul\TimeOff\Models\LeaveAllocation;
+use Webkul\TimeOff\Models\LeaveType;
 
 beforeEach(function () {
     TestBootstrapHelper::ensurePluginInstalled('attendance');
@@ -300,6 +306,7 @@ it('exposes the detailed hours columns on the export surfaces', function () {
     $detailColumns = collect(AbsenceDetailExporter::getColumns())->map->getName()->all();
 
     expect($detailColumns)->toContain(
+        'remaining-leave',
         'scheduled-minutes',
         'worked-minutes',
         'overtime-minutes',
@@ -308,4 +315,118 @@ it('exposes the detailed hours columns on the export surfaces', function () {
         'early-leave-minutes',
         'variance-minutes',
     );
+});
+
+it('places overview exports in toolbar, syncs filters/search/columns, and reports remaining leave', function () {
+    Carbon::setTestNow('2026-09-15 12:00:00');
+
+    try {
+        $company = CompanyHelper::company();
+        uxRegisterUser($company);
+
+        $calendar = uxCalendar(['company_id' => $company->id]);
+        $alpha = uxEmployee($calendar, 'Alpha Synced', $company->id);
+        $beta = uxEmployee($calendar, 'Beta Excluded', $company->id);
+
+        $annual = LeaveType::create(['name' => 'Annual Leave', 'leave_validation_type' => 'both', 'company_id' => $company->id]);
+        $sick = LeaveType::create(['name' => 'Sick Leave', 'leave_validation_type' => 'both', 'company_id' => $company->id]);
+
+        foreach ([[$annual, 20], [$sick, 10]] as [$type, $days]) {
+            LeaveAllocation::create([
+                'holiday_status_id'   => $type->id,
+                'employee_id'         => $alpha->id,
+                'employee_company_id' => $company->id,
+                'company_id'          => $company->id,
+                'name'                => $type->name.' 2026',
+                'state'               => State::VALIDATE_TWO->value,
+                'allocation_type'     => AllocationType::REGULAR->value,
+                'date_from'           => '2026-01-01',
+                'date_to'             => '2026-12-31',
+                'number_of_days'      => $days,
+            ]);
+        }
+
+        // Approved 1d annual + 0.5d sick; refused & pending ignored for balance
+        foreach ([
+            [$annual->id, '2026-09-07', 1, State::VALIDATE_TWO, false],
+            [$sick->id, '2026-09-08', 0.5, State::VALIDATE_TWO, true],
+            [$annual->id, '2026-09-09', 1, State::REFUSE, false],
+            [$annual->id, '2026-09-10', 1, State::CONFIRM, false],
+        ] as [$typeId, $date, $days, $state, $half]) {
+            Leave::create([
+                'employee_id'       => $alpha->id,
+                'holiday_status_id' => $typeId,
+                'date_from'         => "{$date} 00:00:00",
+                'date_to'           => "{$date} 00:00:00",
+                'request_date_from' => $date,
+                'request_date_to'   => $date,
+                'request_unit_half' => $half,
+                'number_of_days'    => $days,
+                'state'             => $state,
+                'company_id'        => $company->id,
+            ]);
+        }
+
+        $component = Livewire::test(AttendanceOverview::class);
+
+        expect(collect($component->instance()->getCachedHeaderActions())->map->getName()->all())->not->toContain('export', 'exportDetail')
+            ->and(collect($component->instance()->getTable()->getToolbarActions())->map->getName()->all())->toContain('export', 'exportDetail');
+
+        $daysHtml = $component->html();
+        expect(strpos($daysHtml, __('attendance::filament/pages/overview.export-detail')))
+            ->toBeGreaterThan(strpos($daysHtml, 'fi-ta-header-toolbar'));
+
+        $component->call('showRegisterView', 'totals');
+        $remainingCol = collect($component->instance()->getTable()->getColumns())->first(fn (object $c): bool => $c->getName() === 'totals.remaining_leave');
+
+        expect($remainingCol->record($alpha)->getState())->toBe(28.5)
+            ->and($remainingCol->record($alpha)->getTooltip())->toContain('Annual Leave: 19 / 20', 'Sick Leave: 9.5 / 10');
+
+        $toggles = collect($component->instance()->tableColumns)->map(fn (array $col): array => match ($col['name']) {
+            'totals.workdays'                               => array_merge($col, ['isToggled' => false]),
+            'totals.late_minutes', 'totals.remaining_leave' => array_merge($col, ['isToggled' => true]),
+            default                                         => $col,
+        })->all();
+
+        $component->call('applyTableColumnManager', $toggles)
+            ->fillForm(['view_mode' => 'range', 'employee_id' => $alpha->id, 'date_from' => '2026-09-07', 'date_to' => '2026-09-09'], 'filterForm')
+            ->call('applyFilters')
+            ->mountAction('export')
+            ->assertSchemaStateSet(['columnMap.workdays.isEnabled' => false, 'columnMap.late_minutes.isEnabled' => true, 'columnMap.remaining_leave.isEnabled' => true])
+            ->callMountedAction();
+
+        $summaryExport = Export::query()->latest('id')->firstOrFail();
+        $summaryDisk = $summaryExport->getFileDisk();
+        $summaryDir = $summaryExport->getFileDirectory();
+        $summaryFile = collect($summaryDisk->files($summaryDir))->first(fn (string $f): bool => str($f)->endsWith('.csv') && ! str($f)->endsWith('headers.csv'));
+
+        expect($summaryDisk->get($summaryDir.DIRECTORY_SEPARATOR.'headers.csv'))->toContain('Late Minutes', 'Remaining Leave')->not->toContain('Total Workdays')
+            ->and($summaryDisk->get($summaryFile))->toContain($alpha->name, '28.5');
+
+        $component->call('showRegisterView', 'days')
+            ->fillForm(['view_mode' => 'range', 'employee_id' => null, 'date_from' => '2026-09-07', 'date_to' => '2026-09-09'], 'filterForm')
+            ->call('applyFilters')
+            ->set('tableSearch', 'Alpha Synced');
+
+        $dayToggles = collect($component->instance()->tableColumns)->map(
+            fn (array $col): array => in_array($col['name'], ['schedule', 'cells.2026-09-08'], true) ? array_merge($col, ['isToggled' => false]) : $col,
+        )->all();
+
+        $component->call('applyTableColumnManager', $dayToggles)
+            ->mountAction('exportDetail')
+            ->assertSchemaStateSet(['columnMap.schedule.isEnabled' => false, 'columnMap.employee.isEnabled' => true])
+            ->callMountedAction();
+
+        $detailExport = Export::query()->latest('id')->firstOrFail();
+        $detailDisk = $detailExport->getFileDisk();
+        $detailDir = $detailExport->getFileDirectory();
+        $detailFile = collect($detailDisk->files($detailDir))->first(fn (string $f): bool => str($f)->endsWith('.csv') && ! str($f)->endsWith('headers.csv'));
+        $detailHeaders = str_getcsv(trim(ltrim($detailDisk->get($detailDir.DIRECTORY_SEPARATOR.'headers.csv'), "\xEF\xBB\xBF")));
+
+        expect($detailExport->successful_rows)->toBe(1)
+            ->and($detailHeaders)->toContain('2026-09-07 (Mon)', '2026-09-09 (Wed)', 'Remaining Leave')->not->toContain('2026-09-08 (Tue)', 'Schedule')
+            ->and($detailDisk->get($detailFile))->toContain($alpha->name, '28.5')->not->toContain($beta->name);
+    } finally {
+        Carbon::setTestNow();
+    }
 });
