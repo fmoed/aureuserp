@@ -56,6 +56,9 @@
         <testsuite name="BiometricAttendanceFeature">
             <directory>plugins/webkul/biometric-attendance/tests/Feature</directory>
         </testsuite>
+        <testsuite name="RemoteAttendanceFeature">
+            <directory>plugins/webkul/remote-attendance/tests/Feature</directory>
+        </testsuite>
     </testsuites>
     <source>
         <include>

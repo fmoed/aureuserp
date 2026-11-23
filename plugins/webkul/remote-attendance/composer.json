@@ -1,0 +1,30 @@
+{
+    "name": "webkul/remote-attendance",
+    "description": "Remote employee self-service check-in, morning reminders, and daily task/timesheet logging",
+    "authors": [
+        {
+            "name": "AureusERP",
+            "email": "support@aureuserp.in"
+        }
+    ],
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Webkul\\RemoteAttendance\\RemoteAttendanceServiceProvider"
+            ],
+            "aliases": {}
+        }
+    },
+    "autoload": {
+        "psr-4": {
+            "Webkul\\RemoteAttendance\\": "src/",
+            "Webkul\\RemoteAttendance\\Database\\Factories\\": "database/factories/",
+            "Webkul\\RemoteAttendance\\Database\\Seeders\\": "database/seeders/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Webkul\\RemoteAttendance\\Tests\\": "tests/"
+        }
+    }
+}

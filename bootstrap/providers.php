@@ -29,6 +29,7 @@ use Webkul\Product\ProductServiceProvider;
 use Webkul\Project\ProjectServiceProvider;
 use Webkul\Purchase\PurchaseServiceProvider;
 use Webkul\Recruitment\RecruitmentServiceProvider;
+use Webkul\RemoteAttendance\RemoteAttendanceServiceProvider;
 use Webkul\Sale\SaleServiceProvider;
 use Webkul\Security\SecurityServiceProvider;
 use Webkul\Support\SupportServiceProvider;
@@ -65,6 +66,7 @@ return [
     ProjectServiceProvider::class,
     PurchaseServiceProvider::class,
     RecruitmentServiceProvider::class,
+    RemoteAttendanceServiceProvider::class,
     SaleServiceProvider::class,
     SecurityServiceProvider::class,
     SupportServiceProvider::class,

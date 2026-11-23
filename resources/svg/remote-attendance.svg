@@ -1,0 +1,25 @@
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<clipPath id="pin-map">
+<path d="M31 13.5C22.9919 13.5 16.5 19.9919 16.5 28C16.5 37.5 31 48.8 31 48.8C31 48.8 45.5 37.5 45.5 28C45.5 19.9919 39.0081 13.5 31 13.5Z"/>
+</clipPath>
+</defs>
+<rect x="0.5" y="0.5" width="63" height="63" rx="12.5" fill="white"/>
+<rect x="0.5" y="0.5" width="63" height="63" rx="12.5" stroke="#DCE0E5"/>
+<path d="M31 11C21.6112 11 14 18.6112 14 28C14 39.8 31 53 31 53C31 53 48 39.8 48 28C48 18.6112 40.3888 11 31 11Z" fill="#0070F2"/>
+<g clip-path="url(#pin-map)">
+<rect x="14" y="12" width="34" height="38" fill="white"/>
+<polygon points="15,12 29,12 24,25 15,29" fill="#66AAFA"/>
+<polygon points="31.5,12 42.036,12.372 34.368,19.952 27.837,19.717" fill="#E5E9F0"/>
+<polygon points="45,12 48,14 20.172,39.036 18.748,35.721" fill="#FDB421"/>
+<polygon points="48,16 48,33 38.953,32.598 38.251,24.128" fill="#66AAFA"/>
+<polygon points="17.266,42.854 28.641,32.699 34.558,35.655 24.632,46.19 15,49" fill="#66AAFA"/>
+<polygon points="35.58,33.513 46,35 46,49 33.029,48.008" fill="#E5E9F0"/>
+</g>
+<circle cx="31" cy="27.5" r="9.5" fill="white"/>
+<circle cx="31" cy="27.5" r="7.8" fill="white" stroke="#0070F2" stroke-width="2.2"/>
+<circle cx="31" cy="25" r="2.5" fill="#0070F2"/>
+<path d="M26.2 32.2C26.7 29.7 28.6 28.5 31 28.5C33.4 28.5 35.3 29.7 35.8 32.2C34.5 33.4 32.8 34.1 31 34.1C29.2 34.1 27.5 33.4 26.2 32.2Z" fill="#0070F2"/>
+<circle cx="44.5" cy="44" r="7.5" fill="#FDB421" stroke="white" stroke-width="1"/>
+<path d="M41 44L43.5 46.5L48.2 41.5" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
