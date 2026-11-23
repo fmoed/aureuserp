@@ -6,6 +6,8 @@ use Illuminate\Auth\Access\HandlesAuthorization;
 use Illuminate\Database\Eloquent\Builder;
 use Webkul\Attendance\Models\Attendance;
 use Webkul\Attendance\Settings\AttendanceSettings;
+use Webkul\PluginManager\Package;
+use Webkul\RemoteAttendance\Filament\Widgets\RemoteCheckInWidget;
 use Webkul\Security\Enums\PermissionType;
 use Webkul\Security\Models\User;
 
@@ -34,7 +36,13 @@ class AttendancePolicy
      */
     public function viewAny(User $user): bool
     {
-        return $user->can('view_any_attendance_attendance');
+        if ($user->can('view_any_attendance_attendance')) {
+            return true;
+        }
+
+        return Package::isPluginInstalled('remote-attendance')
+            && class_exists(RemoteCheckInWidget::class)
+            && RemoteCheckInWidget::isUserEligible($user);
     }
 
     /**

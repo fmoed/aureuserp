@@ -25,7 +25,6 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
 use Webkul\Attendance\Filament\Exports\AttendanceExporter;
 use Webkul\Attendance\Filament\Exports\Jobs\PrepareAttendanceExport;
-use Webkul\Attendance\Filament\Resources\AttendanceResource;
 use Webkul\Attendance\Filament\Tables\AttendanceRegisterTable;
 use Webkul\Attendance\Models\Attendance;
 use Webkul\Attendance\Policies\AttendancePolicy;
@@ -34,6 +33,8 @@ use Webkul\Attendance\Services\ShiftWindowResolver;
 use Webkul\Attendance\Settings\AttendanceSettings;
 use Webkul\Attendance\Writers\WriterRegistry;
 use Webkul\Employee\Filament\Resources\EmployeeResource;
+use Webkul\PluginManager\Package;
+use Webkul\RemoteAttendance\Services\RemoteCheckInService;
 use Webkul\Support\Models\Calendar;
 
 class AttendancesTable
@@ -256,11 +257,23 @@ class AttendancesTable
 
     public static function configure(Table $table): Table
     {
+        $remoteInstalled = Package::isPluginInstalled('remote-attendance') && class_exists(RemoteCheckInService::class);
+
         return $table
             ->defaultSort('work_date', 'desc')
             ->defaultPaginationPageOption(25)
             ->paginated([10, 25, 50])
-            ->modifyQueryUsing(fn (Builder $query): Builder => AttendancePolicy::scopeQuery($query)->with(['employee.calendar.attendance']))
+            ->modifyQueryUsing(function (Builder $query) use ($remoteInstalled): Builder {
+                $user = auth()->user();
+
+                if ($user && ! $user->can('view_any_attendance_attendance')) {
+                    $query->whereHas('employee', fn (Builder $employee) => $employee->where('user_id', $user->id));
+                }
+
+                return AttendancePolicy::scopeQuery($query)->with(
+                    $remoteInstalled ? ['employee.calendar.attendance', 'messages'] : ['employee.calendar.attendance']
+                );
+            })
             ->columns([
                 TextColumn::make('employee.name')
                     ->label(__('attendance::filament/resources/attendance.table.columns.employee'))
@@ -326,6 +339,15 @@ class AttendancesTable
                     ->badge()
                     ->color('info')
                     ->placeholder(''),
+                ...($remoteInstalled ? [
+                    TextColumn::make('accomplishments')
+                        ->label(__('remote-attendance::filament/pages/remote-check-in.table.accomplishments'))
+                        ->html()
+                        ->state(fn (Attendance $record): ?string => RemoteCheckInService::formatAttendanceNotesHtml($record))
+                        ->wrap()
+                        ->toggleable()
+                        ->placeholder('—'),
+                ] : []),
                 TextColumn::make('created_at')
                     ->label(__('attendance::filament/resources/attendance.table.columns.created-at'))
                     ->dateTime()
@@ -459,8 +481,8 @@ class AttendancesTable
                             ->exporter(AttendanceExporter::class)
                             ->job(PrepareAttendanceExport::class)
                             ->maxRows(self::EXPORT_MAX_ROWS)
-                            ->visible(fn (): bool => AttendanceResource::canViewAny())
-                            ->authorize(fn (): bool => AttendanceResource::canViewAny()),
+                            ->visible(fn (): bool => (bool) auth()->user()?->can('view_any_attendance_attendance'))
+                            ->authorize(fn (): bool => (bool) auth()->user()?->can('view_any_attendance_attendance')),
                     ),
                     DeleteBulkAction::make()
                         ->visible(fn (): bool => (bool) auth()->user()?->can('delete_any_attendance_attendance'))
@@ -503,8 +525,8 @@ class AttendancesTable
                         ->exporter(AttendanceExporter::class)
                         ->job(PrepareAttendanceExport::class)
                         ->maxRows(self::EXPORT_MAX_ROWS)
-                        ->visible(fn (): bool => AttendanceResource::canViewAny())
-                        ->authorize(fn (): bool => AttendanceResource::canViewAny())
+                        ->visible(fn (): bool => (bool) auth()->user()?->can('view_any_attendance_attendance'))
+                        ->authorize(fn (): bool => (bool) auth()->user()?->can('view_any_attendance_attendance'))
                         ->modifyQueryUsing(fn (Builder $query, array $options): Builder => AttendanceExporter::scopeQuery($query, $options)),
                 ),
             ]);
