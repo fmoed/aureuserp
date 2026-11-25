@@ -26,6 +26,7 @@ use Illuminate\Validation\ValidationException;
 use Webkul\Attendance\Filament\Exports\AttendanceExporter;
 use Webkul\Attendance\Filament\Exports\Jobs\PrepareAttendanceExport;
 use Webkul\Attendance\Filament\Tables\AttendanceRegisterTable;
+use Webkul\Attendance\Jobs\RebuildAttendanceJob;
 use Webkul\Attendance\Models\Attendance;
 use Webkul\Attendance\Policies\AttendancePolicy;
 use Webkul\Attendance\Services\AttendanceOverviewService;
@@ -263,6 +264,7 @@ class AttendancesTable
             ->defaultSort('work_date', 'desc')
             ->defaultPaginationPageOption(25)
             ->paginated([10, 25, 50])
+            ->poll(fn (): ?string => RebuildAttendanceJob::isRunning() ? '3s' : null)
             ->modifyQueryUsing(function (Builder $query) use ($remoteInstalled): Builder {
                 $user = auth()->user();
 

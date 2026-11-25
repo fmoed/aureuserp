@@ -6,30 +6,33 @@ use Filament\Actions\Action;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Select;
 use Filament\Notifications\Notification;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
+use Webkul\Attendance\Jobs\RebuildAttendanceJob;
 use Webkul\Attendance\Models\Attendance;
 use Webkul\Attendance\Services\AttendanceOverviewService;
-use Webkul\Attendance\Services\EventPairingService;
-use Webkul\Attendance\Writers\WriterRegistry;
-use Webkul\Employee\Models\Employee;
 use Webkul\Support\Models\Calendar;
+use Webkul\Support\Services\CompanyContext;
 
 /**
- * Re-applies the current shift rules to already paired automatic rows
- * (for example after an employee moved to a new shift) without touching
- * manual rows or locked payroll periods.
+ * Queues a background rebuild of automatic attendance rows from raw events
+ * (for example after shift rules or biometric barcodes change) without
+ * touching manual rows or locked payroll periods.
  */
 class RebuildAttendanceAction
 {
     public static function make(): Action
     {
         return Action::make('rebuildAttendance')
-            ->label(__('attendance::filament/actions/rebuild-attendance.label'))
+            ->label(fn (): string => RebuildAttendanceJob::isRunning()
+                ? __('attendance::filament/actions/rebuild-attendance.running-label')
+                : __('attendance::filament/actions/rebuild-attendance.label'))
             ->modalHeading(__('attendance::filament/actions/rebuild-attendance.heading'))
             ->modalDescription(__('attendance::filament/actions/rebuild-attendance.description'))
             ->icon('heroicon-o-arrow-path')
             ->color('warning')
+            ->disabled(fn (): bool => RebuildAttendanceJob::isRunning())
+            ->extraAttributes(fn (): array => RebuildAttendanceJob::isRunning() ? ['wire:poll.3s' => '$refresh'] : [])
             ->visible(fn (): bool => static::canRebuild())
             ->authorize(fn (): bool => static::canRebuild())
             ->schema([
@@ -64,40 +67,32 @@ class RebuildAttendanceAction
                     ->searchable()
                     ->placeholder(__('attendance::filament/actions/rebuild-attendance.all-employees')),
             ])
-            ->action(function (array $data, $livewire): void {
-                $from = Carbon::parse($data['date_from']);
-                $to = Carbon::parse($data['date_to']);
+            ->action(function (array $data): void {
+                if (RebuildAttendanceJob::isRunning()) {
+                    Notification::make()
+                        ->warning()
+                        ->title(__('attendance::filament/actions/rebuild-attendance.already-running'))
+                        ->send();
 
-                $employees = AttendanceOverviewService::eligibleEmployeeQuery()
-                    ->when(filled($data['employee_id'] ?? null), fn (Builder $query) => $query->whereKey($data['employee_id']))
-                    ->when(filled($data['department_id'] ?? null), fn (Builder $query) => AttendanceOverviewService::scopeByDepartment($query, (int) $data['department_id']))
-                    ->when(filled($data['calendar_id'] ?? null), fn (Builder $query) => AttendanceOverviewService::scopeByCalendar($query, (int) $data['calendar_id']))
-                    ->get();
-
-                $pairing = app(EventPairingService::class);
-                $rows = 0;
-
-                $slugs = WriterRegistry::slugs();
-                if (empty($slugs)) {
-                    $slugs = ['biometric-attendance'];
+                    return;
                 }
 
-                foreach ($employees as $employee) {
-                    foreach ($slugs as $slug) {
-                        $rows += $pairing->rebuildForRange($employee, $slug, $from, $to)['rows'];
-                    }
-                }
+                Cache::put(RebuildAttendanceJob::RUNNING_KEY, auth()->id() ?? true, 300);
 
-                if (is_object($livewire) && method_exists($livewire, 'resetTable')) {
-                    $livewire->resetTable();
-                }
+                RebuildAttendanceJob::dispatch(
+                    dateFrom: (string) $data['date_from'],
+                    dateTo: (string) $data['date_to'],
+                    calendarId: filled($data['calendar_id'] ?? null) ? (int) $data['calendar_id'] : null,
+                    departmentId: filled($data['department_id'] ?? null) ? (int) $data['department_id'] : null,
+                    employeeId: filled($data['employee_id'] ?? null) ? (int) $data['employee_id'] : null,
+                    initiatorUserId: auth()->id(),
+                    companyIds: app(CompanyContext::class)->activeIds(),
+                );
 
                 Notification::make()
-                    ->success()
-                    ->title(__('attendance::filament/actions/rebuild-attendance.completed', [
-                        'employees' => $employees->count(),
-                        'rows'      => $rows,
-                    ]))
+                    ->info()
+                    ->title(__('attendance::filament/actions/rebuild-attendance.queued-title'))
+                    ->body(__('attendance::filament/actions/rebuild-attendance.queued-body'))
                     ->send();
             });
     }

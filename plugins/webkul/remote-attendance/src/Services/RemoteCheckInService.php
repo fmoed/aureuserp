@@ -8,7 +8,9 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
+use Webkul\Attendance\Events\EventGateway;
 use Webkul\Attendance\Models\Attendance;
+use Webkul\Attendance\Models\AttendanceEvent;
 use Webkul\Attendance\Services\ShiftWindowResolver;
 use Webkul\Attendance\Settings\AttendanceSettings;
 use Webkul\Employee\Models\Employee;
@@ -180,6 +182,16 @@ class RemoteCheckInService
                 'creator_id'   => $lockedEmployee->user_id,
             ]);
 
+            $event = EventGateway::push(
+                (int) $lockedEmployee->getKey(),
+                $moment->format('Y-m-d H:i:s'),
+                AttendanceEvent::DIRECTION_IN,
+                self::SOURCE_REMOTE,
+                "remote:{$lockedEmployee->getKey()}:{$workDate}:in",
+                __('remote-attendance::app.source'),
+            );
+            $event->update(['attendance_id' => $attendance->getKey()]);
+
             if (filled($planNote)) {
                 $this->appendChatterNote($attendance, $lockedEmployee, trim((string) $planNote));
             }
@@ -229,6 +241,20 @@ class RemoteCheckInService
             $attendance->update([
                 'check_out' => $moment->format('Y-m-d H:i:s'),
             ]);
+
+            $attendanceDate = $attendance->work_date instanceof Carbon
+                ? $attendance->work_date->toDateString()
+                : (string) $attendance->getRawOriginal('work_date');
+
+            $event = EventGateway::push(
+                (int) $lockedEmployee->getKey(),
+                $moment->format('Y-m-d H:i:s'),
+                AttendanceEvent::DIRECTION_OUT,
+                self::SOURCE_REMOTE,
+                "remote:{$lockedEmployee->getKey()}:{$attendanceDate}:out",
+                __('remote-attendance::app.source'),
+            );
+            $event->update(['attendance_id' => $attendance->getKey()]);
 
             if (filled($summaryNote)) {
                 $this->appendChatterNote($attendance, $lockedEmployee, trim((string) $summaryNote));

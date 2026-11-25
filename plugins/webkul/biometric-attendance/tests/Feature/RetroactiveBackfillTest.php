@@ -12,9 +12,11 @@ use Webkul\BiometricAttendance\Filament\Resources\DeviceResource\RelationManager
 use Webkul\BiometricAttendance\Models\Device;
 use Webkul\BiometricAttendance\Models\Punch;
 use Webkul\BiometricAttendance\Services\DeviceInfo;
+use Webkul\BiometricAttendance\Services\DeviceSyncService;
 use Webkul\BiometricAttendance\Services\SyncPipeline;
 use Webkul\BiometricAttendance\Services\ZktecoConnectionException;
 use Webkul\Employee\Models\Employee;
+use Webkul\Security\Models\User;
 use Webkul\Support\Models\Calendar;
 use Webkul\Support\Models\CalendarAttendance;
 
@@ -186,4 +188,50 @@ it('rebuilds automatic rows for a new shift without touching manual rows', funct
 
 it('registers the unmatched punches relation manager on the device resource', function () {
     expect(DeviceResource::getRelations())->toContain(PunchesRelationManager::class);
+});
+
+it('reassigns already-paired punches and rebuilds both employees when a barcode moves between employees', function () {
+    $device = backfillDevice('Swap Gate');
+    $calendar = backfillCalendar();
+
+    $employeeA = Employee::factory()->create([
+        'user_id'     => User::factory(),
+        'name'        => 'Wrong Barcode Employee',
+        'time_zone'   => 'UTC',
+        'calendar_id' => $calendar->id,
+        'barcode'     => '155',
+    ]);
+    $employeeB = Employee::factory()->create([
+        'user_id'     => User::factory(),
+        'name'        => 'Correct Barcode Employee',
+        'time_zone'   => 'UTC',
+        'calendar_id' => $calendar->id,
+        'barcode'     => null,
+    ]);
+
+    backfillPunch($device, '155', '2026-09-10 08:00:00', 1);
+    backfillPunch($device, '155', '2026-09-10 17:00:00', 2);
+
+    app(DeviceSyncService::class)->backfillUnmatched($device);
+
+    $pipeline = app(SyncPipeline::class);
+    $pipeline->pushPendingPunches($device);
+    $pipeline->pairAttendance();
+
+    expect(Attendance::where('employee_id', $employeeA->id)->count())->toBe(1)
+        ->and(Attendance::where('employee_id', $employeeB->id)->count())->toBe(0);
+
+    // Move barcode 155 from employeeA to employeeB
+    $employeeA->barcode = null;
+    $employeeA->save();
+
+    $employeeB->barcode = '155';
+    $employeeB->save();
+
+    expect(Punch::where('employee_id', $employeeB->id)->count())->toBe(2)
+        ->and(Punch::where('employee_id', $employeeA->id)->count())->toBe(0)
+        ->and(AttendanceEvent::where('employee_id', $employeeB->id)->count())->toBe(2)
+        ->and(AttendanceEvent::where('employee_id', $employeeA->id)->count())->toBe(0)
+        ->and(Attendance::where('employee_id', $employeeA->id)->count())->toBe(0)
+        ->and(Attendance::where('employee_id', $employeeB->id)->count())->toBe(1);
 });
