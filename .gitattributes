@@ -9,3 +9,6 @@
 /.github export-ignore
 CHANGELOG.md export-ignore
 .styleci.yml export-ignore
+
+plugins/webkul/support/src/Filament/Pages/Help.php merge=ours
+plugins/webkul/support/resources/views/pages/help.blade.php merge=ours
