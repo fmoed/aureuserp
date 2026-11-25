@@ -54,10 +54,12 @@ class EventGateway
                 'attendance_id' => null,
             ]);
 
-            if ($previousEmployee !== null && $previousAttendance !== null && $writer !== null) {
-                $anchorDay = $previousAttendance->work_date instanceof Carbon
-                    ? $previousAttendance->work_date->copy()
-                    : Carbon::parse((string) $previousAttendance->getRawOriginal('work_date'), 'UTC');
+            if ($previousEmployee !== null && $writer !== null) {
+                $anchorDay = $previousAttendance !== null
+                    ? ($previousAttendance->work_date instanceof Carbon
+                        ? $previousAttendance->work_date->copy()
+                        : Carbon::parse((string) $previousAttendance->getRawOriginal('work_date'), 'UTC'))
+                    : Carbon::parse((string) $event->getRawOriginal('punched_at'), 'UTC')->startOfDay();
 
                 app(EventPairingService::class)->rebuildForRange(
                     $previousEmployee,

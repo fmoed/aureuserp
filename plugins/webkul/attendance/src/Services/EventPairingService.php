@@ -145,11 +145,13 @@ class EventPairingService
                     ->withoutGlobalScope(CompanyScope::class)
                     ->whereIn('attendance_id', $rowIds)
                     ->update(['attendance_id' => null]);
-
-                $rows->each(fn (Attendance $row): ?bool => $row->delete());
             }
 
-            return ['rows' => count($this->rebuild($employee, $writer)['rows'])];
+            $rebuiltIds = $this->rebuild($employee, $writer)['rows'];
+
+            $rows->whereNotIn('id', $rebuiltIds)->each(fn (Attendance $row): ?bool => $row->delete());
+
+            return ['rows' => count($rebuiltIds)];
         });
     }
 

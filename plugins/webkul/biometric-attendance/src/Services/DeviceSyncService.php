@@ -117,7 +117,6 @@ class DeviceSyncService
 
         $userIds = Punch::query()
             ->where('device_id', $device->getKey())
-            ->whereNull('employee_id')
             ->whereNotNull('zk_user_id')
             ->distinct()
             ->pluck('zk_user_id');
@@ -131,9 +130,14 @@ class DeviceSyncService
 
             $backfilled += Punch::query()
                 ->where('device_id', $device->getKey())
-                ->whereNull('employee_id')
                 ->where('zk_user_id', $userId)
-                ->update(['employee_id' => $employeeId]);
+                ->where(fn ($query) => $query
+                    ->whereNull('employee_id')
+                    ->orWhere('employee_id', '!=', $employeeId))
+                ->update([
+                    'employee_id' => $employeeId,
+                    'pushed_at'   => null,
+                ]);
         }
 
         return $backfilled;
@@ -165,7 +169,9 @@ class DeviceSyncService
             );
 
         $userIds = Punch::query()
-            ->whereNull('employee_id')
+            ->where(fn ($query) => $query
+                ->whereNull('employee_id')
+                ->orWhere('employee_id', '!=', $employee->getKey()))
             ->whereNotNull('zk_user_id')
             ->whereHas('device', $deviceQuery)
             ->distinct()
@@ -179,10 +185,15 @@ class DeviceSyncService
         }
 
         return Punch::query()
-            ->whereNull('employee_id')
+            ->where(fn ($query) => $query
+                ->whereNull('employee_id')
+                ->orWhere('employee_id', '!=', $employee->getKey()))
             ->whereIn('zk_user_id', $userIds)
             ->whereHas('device', $deviceQuery)
-            ->update(['employee_id' => $employee->getKey()]);
+            ->update([
+                'employee_id' => $employee->getKey(),
+                'pushed_at'   => null,
+            ]);
     }
 
     /**

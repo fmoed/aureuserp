@@ -14,7 +14,9 @@ use Webkul\Attendance\Enums\MissingCheckoutPolicy;
 use Webkul\Attendance\Filament\Resources\AttendanceResource;
 use Webkul\Attendance\Filament\Resources\AttendanceResource\Pages\ListAttendances;
 use Webkul\Attendance\Models\Attendance;
+use Webkul\Attendance\Models\AttendanceEvent;
 use Webkul\Attendance\Services\AttendanceOverviewService;
+use Webkul\Attendance\Services\EventPairingService;
 use Webkul\Attendance\Settings\AttendanceSettings;
 use Webkul\Attendance\Writers\WriterRegistry;
 use Webkul\Chatter\Models\Message;
@@ -702,4 +704,47 @@ it('renders reminder emails with company branding, public logo URL, missing-file
     $legacyMail = $legacyNotification->toMail($user);
 
     expect((string) $legacyMail->render())->toContain('Prodigy Systems');
+});
+
+it('pushes attendance events on remote check-in/out and preserves rows and chatter notes on rebuild', function () {
+    $company = CompanyHelper::company();
+    FilamentHelper::actingAsCompanyUser($company);
+
+    $calendar = createRemoteRoster($company->id);
+    $employee = createRemoteEmployee($company, WorkLocationEnum::Home, $calendar);
+
+    $service = app(RemoteCheckInService::class);
+    $checkInAt = Carbon::parse('2026-11-25 06:00:00', 'UTC');
+    $checkOutAt = Carbon::parse('2026-11-25 14:00:00', 'UTC');
+
+    $attendance = $service->checkIn($employee, 'Planned morning work', $checkInAt);
+    $service->logDailyWork($employee, ['description' => 'Completed financial follow-up'], $checkInAt->copy()->addHour());
+    $service->checkOut($employee, null, $checkOutAt);
+
+    $events = AttendanceEvent::query()
+        ->where('employee_id', $employee->id)
+        ->where('source', 'remote')
+        ->orderBy('punched_at')
+        ->get();
+
+    expect($events)->toHaveCount(2)
+        ->and($events[0]->direction)->toBe(AttendanceEvent::DIRECTION_IN)
+        ->and($events[0]->attendance_id)->toBe($attendance->id)
+        ->and($events[1]->direction)->toBe(AttendanceEvent::DIRECTION_OUT)
+        ->and($events[1]->attendance_id)->toBe($attendance->id);
+
+    $rebuilt = app(EventPairingService::class)->rebuildForRange(
+        $employee,
+        'remote',
+        Carbon::parse('2026-11-25'),
+        Carbon::parse('2026-11-25'),
+    );
+
+    $surviving = Attendance::query()->find($attendance->id);
+
+    expect($rebuilt['rows'])->toBe(1)
+        ->and($surviving)->not->toBeNull()
+        ->and($surviving->getRawOriginal('check_in'))->toBe('2026-11-25 06:00:00')
+        ->and($surviving->getRawOriginal('check_out'))->toBe('2026-11-25 14:00:00')
+        ->and($surviving->messages()->where('type', 'comment')->count())->toBe(2);
 });

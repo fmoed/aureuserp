@@ -5,8 +5,11 @@ require_once __DIR__.'/../../../support/tests/Helpers/FilamentHelper.php';
 
 use Filament\Actions\Exports\Models\Export;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Queue;
 use Livewire\Livewire;
+use Webkul\Attendance\Events\EventGateway;
 use Webkul\Attendance\Filament\Exports\AttendanceExporter;
 use Webkul\Attendance\Filament\Resources\AttendanceResource;
 use Webkul\Attendance\Filament\Resources\AttendanceResource\Pages\CreateAttendance;
@@ -16,8 +19,11 @@ use Webkul\Attendance\Filament\Resources\AttendanceResource\Schemas\AttendanceFo
 use Webkul\Attendance\Filament\Resources\AttendanceResource\Tables\AttendancesTable;
 use Webkul\Attendance\Filament\Widgets\AttendanceStatsWidget;
 use Webkul\Attendance\Filament\Widgets\TodayAttendanceWidget;
+use Webkul\Attendance\Jobs\RebuildAttendanceJob;
 use Webkul\Attendance\Models\Attendance;
+use Webkul\Attendance\Models\AttendanceEvent;
 use Webkul\Attendance\Policies\AttendancePolicy;
+use Webkul\Attendance\Services\EventPairingService;
 use Webkul\Attendance\Settings\AttendanceSettings;
 use Webkul\Attendance\Writers\WriterRegistry;
 use Webkul\Employee\Filament\Resources\EmployeeResource;
@@ -1221,4 +1227,56 @@ it('names attendance export files by period and scope', function () {
     ]);
 
     expect($exporter->getFileName(new Export))->toBe('attendances_2026-09-01_to_2026-09-30_emp-ahmed-ali');
+});
+
+it('queues rebuild attendance once, locks concurrent triggers, disables the button while running, and notifies initiator on completion', function () {
+    Cache::forget(RebuildAttendanceJob::RUNNING_KEY);
+
+    $user = FilamentHelper::actingAs([
+        'view_any_attendance_attendance',
+        'delete_any_attendance_attendance',
+    ]);
+
+    $employee = Employee::factory()->create([
+        'user_id'    => User::factory(),
+        'time_zone'  => 'UTC',
+        'company_id' => $user->default_company_id,
+    ]);
+
+    $event = EventGateway::push($employee->id, '2026-09-10 08:00:00', AttendanceEvent::DIRECTION_IN, 'biometric-attendance:1', 'evt-queued-1');
+    EventGateway::push($employee->id, '2026-09-10 17:00:00', AttendanceEvent::DIRECTION_OUT, 'biometric-attendance:1', 'evt-queued-2');
+
+    Queue::fake([RebuildAttendanceJob::class]);
+
+    Livewire::test(ListAttendances::class)
+        ->assertActionEnabled('rebuildAttendance')
+        ->callAction('rebuildAttendance', [
+            'date_from' => '2026-09-01',
+            'date_to'   => '2026-09-30',
+        ])
+        ->assertNotified()
+        ->assertActionDisabled('rebuildAttendance');
+
+    Queue::assertPushed(RebuildAttendanceJob::class, 1);
+    expect(RebuildAttendanceJob::isRunning())->toBeTrue();
+
+    // Concurrent attempt while running must be blocked
+    Livewire::test(ListAttendances::class)
+        ->assertActionDisabled('rebuildAttendance');
+
+    // Run job synchronously and verify rebuild + database notification + lock release
+    (new RebuildAttendanceJob(
+        dateFrom: '2026-09-01',
+        dateTo: '2026-09-30',
+        employeeId: $employee->id,
+        initiatorUserId: $user->id,
+    ))->handle(app(EventPairingService::class));
+
+    expect(RebuildAttendanceJob::isRunning())->toBeFalse()
+        ->and(Attendance::where('employee_id', $employee->id)->whereDate('work_date', '2026-09-10')->count())->toBe(1)
+        ->and($event->fresh()->attendance_id)->not->toBeNull()
+        ->and($user->fresh()->notifications()->count())->toBe(1);
+
+    Livewire::test(ListAttendances::class)
+        ->assertActionEnabled('rebuildAttendance');
 });
